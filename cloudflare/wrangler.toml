@@ -1,0 +1,20 @@
+name = "correspondencia-permisos"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# Interfaz estática. `npm run build` copia dashboard/index.html aquí (nunca data.js ni el Excel).
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "correspondencia"
+# Reemplazar por el id que entrega: npx wrangler d1 create correspondencia
+database_id = "REEMPLAZAR_CON_ID_DE_D1"
+migrations_dir = "migrations"
+
+[observability]
+enabled = true

@@ -1,0 +1,17 @@
+{
+  "name": "correspondencia-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "npm run build && wrangler d1 migrations apply correspondencia --local && wrangler dev",
+    "migrar": "wrangler d1 migrations apply correspondencia --remote",
+    "deploy": "npm run build && wrangler d1 migrations apply correspondencia --remote && wrangler deploy",
+    "usuario": "node scripts/crear-usuario.mjs",
+    "importar": "node scripts/importar.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}

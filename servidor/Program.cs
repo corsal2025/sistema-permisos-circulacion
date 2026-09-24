@@ -11,7 +11,21 @@ string[] campos = ["n", "hoja", "fecha", "proc_", "doc", "materia", "dest", "pro
 var candado = new object();
 double Ahora() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
 
-SqliteConnection Conectar() { var c = new SqliteConnection(cs); c.Open(); return c; }
+SqliteConnection Conectar()
+{
+    var c = new SqliteConnection(cs);
+    c.Open();
+    using var p = c.CreateCommand();
+    p.CommandText = "PRAGMA busy_timeout=5000;";
+    p.ExecuteNonQuery();
+    return c;
+}
+
+async Task<JsonObject?> LeerJson(HttpRequest req)
+{
+    try { return (await JsonNode.ParseAsync(req.Body)) as JsonObject; }
+    catch (JsonException) { return null; }
+}
 
 SqliteCommand Comando(SqliteConnection c, string sql, object?[] args)
 {
@@ -49,6 +63,7 @@ string Usuario(HttpRequest req) => Uri.UnescapeDataString(req.Headers["X-Usuario
 // ---------- base de datos ----------
 using (var c = Conectar())
 {
+    Ejecutar(c, "PRAGMA journal_mode=WAL;");
     Ejecutar(c, """
         CREATE TABLE IF NOT EXISTS registros(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,7 +121,8 @@ app.MapGet("/api/historial/{id:long}", (long id) =>
 
 app.MapPost("/api/registros", async (HttpRequest req) =>
 {
-    var d = (await JsonNode.ParseAsync(req.Body))!.AsObject();
+    var d = await LeerJson(req);
+    if (d is null) return Results.BadRequest(new { error = "JSON inválido" });
     var usuario = Usuario(req);
     var fecha = Texto(d["fecha"]);
     d["hoja"] = fecha.Length >= 4 ? fecha[..4] : DateTime.Now.ToString("yyyy");
@@ -127,7 +143,8 @@ app.MapPost("/api/registros", async (HttpRequest req) =>
 
 app.MapPut("/api/registros/{id:long}", async (long id, HttpRequest req) =>
 {
-    var d = (await JsonNode.ParseAsync(req.Body))!.AsObject();
+    var d = await LeerJson(req);
+    if (d is null) return Results.BadRequest(new { error = "JSON inválido" });
     var usuario = Usuario(req);
     lock (candado)
     {
@@ -135,6 +152,10 @@ app.MapPut("/api/registros/{id:long}", async (long id, HttpRequest req) =>
         var viejos = Consultar(c, "SELECT * FROM registros WHERE id=$p0", id);
         if (viejos.Count == 0) return Results.NotFound();
         var viejo = viejos[0];
+        // control de concurrencia: si otro usuario guardó después de que se abrió la ficha, no se pisa su cambio
+        if (d["version"] is JsonNode ver && double.TryParse(Texto(ver), System.Globalization.CultureInfo.InvariantCulture, out var v)
+            && Math.Abs(v - Convert.ToDouble(viejo["actualizado"] ?? 0.0)) > 1e-6)
+            return Results.Json(new { error = "Otro usuario modificó este ingreso mientras lo editabas. Revisa los cambios y vuelve a guardar.", registro = viejo }, statusCode: 409);
         var cambios = d.Where(kv => campos.Contains(kv.Key) && kv.Key is not ("n" or "hoja")
                                     && Valor(kv.Key, kv.Value).ToString() != (viejo[kv.Key]?.ToString() ?? ""))
                        .ToDictionary(kv => kv.Key, kv => Valor(kv.Key, kv.Value));

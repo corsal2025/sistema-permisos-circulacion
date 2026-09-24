@@ -6,8 +6,8 @@
 <title>Correspondencia Tránsito</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="vendor/xlsx.full.min.js" defer></script>
+<script src="vendor/chart.umd.js"></script>
 <style>
 :root{
   --bg:#f5f7fa;--panel:#fff;--ink:#0f172a;--ink2:#334155;--mut:#64748b;--line:#e2e8f0;--line2:#f1f5f9;
@@ -134,6 +134,11 @@ dialog::backdrop{background:rgba(11,46,32,.55)}
 dialog h2{margin:0 0 4px}dialog p{margin:0 0 18px;color:var(--mut)}
 dialog input{width:100%;border:1px solid var(--line);border-radius:8px;padding:11px;margin-bottom:14px;text-transform:uppercase}
 dialog .btn{width:100%;justify-content:center}
+dialog input.nu{text-transform:none}dialog .err{color:var(--bad);min-height:1.2em;margin:-6px 0 10px;font-size:13px}
+dialog .fila{display:flex;gap:8px}dialog .fila .btn{width:auto;flex:1}dialog .col{display:grid;gap:8px}
+#dAdm{width:min(640px,94vw)}#dAdm table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px}
+#dAdm td,#dAdm th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}#dAdm tbody tr{cursor:pointer}#dAdm tbody tr:hover{background:#f1f5f9}
+#dAdm select,#dAdm label.ck{display:flex;gap:8px;align-items:center;margin-bottom:14px}#dAdm select{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 20px;border-radius:10px;box-shadow:0 10px 30px #0004;z-index:40;display:none}
 
 @media(max-width:900px){aside{width:64px}.logo span,.logo b,.menu button span,.menu .cnt,.side-foot .ut,.sync span{display:none}.logo{padding:18px 10px}.cards{grid-template-columns:1fr}.hide-m{display:none}}
@@ -164,7 +169,7 @@ dialog .btn{width:100%;justify-content:center}
     <button data-v="ppu"><svg><use href="#i-car"/></svg><span>Buscar patente</span></button>
   </nav>
   <div class="side-foot">
-    <div class="user" onclick="pedirUsuario()" title="Cambiar usuario"><div class="avatar" id="av">?</div><div class="ut"><b id="yo">Sin nombre</b>Cambiar usuario</div></div>
+    <div class="user" onclick="menuUsuario()" title="Cuenta"><div class="avatar" id="av">?</div><div class="ut"><b id="yo">Sin nombre</b><span id="uSub">Cambiar usuario</span></div></div>
     <div class="sync"><i class="dot" id="dot"></i><span id="sync">Conectando…</span></div>
   </div>
 </aside>
@@ -232,6 +237,37 @@ dialog .btn{width:100%;justify-content:center}
   <h2>Bienvenido</h2><p>Ingresa tu nombre. Quedará registrado en cada ingreso y cambio.</p>
   <input id="uNom" required autofocus list="lDest" placeholder="Tu nombre"><button class="btn pri">Entrar</button>
 </form></dialog>
+<dialog id="dLogin" oncancel="event.preventDefault()"><form onsubmit="entrar();return false">
+  <h2>Iniciar sesión</h2><p>Sistema de correspondencia · Permisos de circulación</p>
+  <input id="lUsr" class="nu" required autocomplete="username" placeholder="Usuario">
+  <input id="lClv" class="nu" type="password" required autocomplete="current-password" placeholder="Contraseña">
+  <div class="err" id="lErr"></div><button class="btn pri">Entrar</button>
+</form></dialog>
+<dialog id="dCta"><div class="col">
+  <h2 id="cNom"></h2><p>Opciones de cuenta</p>
+  <button class="btn" onclick="$('#dCta').close();abrirClave()">Cambiar contraseña</button>
+  <button class="btn" id="bAdm" onclick="$('#dCta').close();abrirAdm()">Administrar usuarios</button>
+  <button class="btn" onclick="salir()">Cerrar sesión</button>
+  <button class="btn" onclick="$('#dCta').close()">Volver</button>
+</div></dialog>
+<dialog id="dClave"><form onsubmit="cambiarClave();return false">
+  <h2>Cambiar contraseña</h2><p>Mínimo 10 caracteres. Se cerrarán tus otras sesiones.</p>
+  <input id="cAct" class="nu" type="password" required autocomplete="current-password" placeholder="Contraseña actual">
+  <input id="cNue" class="nu" type="password" required minlength="10" autocomplete="new-password" placeholder="Nueva contraseña">
+  <input id="cRep" class="nu" type="password" required minlength="10" autocomplete="new-password" placeholder="Repetir nueva contraseña">
+  <div class="err" id="cErr"></div><div class="fila"><button type="button" class="btn" onclick="$('#dClave').close()">Cancelar</button><button class="btn pri">Guardar</button></div>
+</form></dialog>
+<dialog id="dAdm"><form onsubmit="guardarUsr();return false">
+  <h2>Usuarios</h2><p>Clic en un usuario para editarlo. Deja la contraseña vacía para no cambiarla.</p>
+  <table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th></tr></thead><tbody id="uLista"></tbody></table>
+  <input id="aUsr" class="nu" required pattern="[a-z0-9._\-]{3,40}" placeholder="usuario (minúsculas, ej: rsalazar)">
+  <input id="aNom" required placeholder="Nombre completo (queda en el historial)">
+  <select id="aRol"><option value="funcionario">Funcionario</option><option value="admin">Administrador</option></select>
+  <input id="aClv" class="nu" type="password" minlength="10" autocomplete="new-password" placeholder="Contraseña (mín. 10 caracteres)">
+  <label class="ck"><input type="checkbox" id="aAct" checked style="width:auto;margin:0"> Activo</label>
+  <div class="err" id="aErr"></div>
+  <div class="fila"><button type="button" class="btn" onclick="limpiarUsr()">Nuevo</button><button type="button" class="btn" onclick="$('#dAdm').close()">Cerrar</button><button class="btn pri">Guardar usuario</button></div>
+</form></dialog>
 <datalist id="lProc"></datalist><datalist id="lDest"></datalist><datalist id="lArch"></datalist>
 <div class="toast" id="toast"></div>
 
@@ -248,16 +284,39 @@ const stp=e=>`<span class="st ${e}">${e==='PENDIENTE'?'Pendiente':'Cerrado'}</sp
 function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._);t._=setTimeout(()=>t.style.display='none',2600)}
 
 /* ---------- usuario y servidor ---------- */
-let usuario='';try{usuario=localStorage.getItem('pc_usuario')||''}catch(e){}
-function pintarUsuario(){$('#yo').textContent=usuario||'Sin nombre';$('#av').textContent=ini(usuario)}
+// modo 'nube': Cloudflare Worker con login. modo 'local': servidor .exe, el usuario solo escribe su nombre.
+let usuario='',modo='local',yo=null,alEntrar=null;try{usuario=localStorage.getItem('pc_usuario')||''}catch(e){}
+function pintarUsuario(){$('#yo').textContent=usuario||'Sin nombre';$('#av').textContent=ini(usuario);
+ $('#uSub').textContent=modo==='nube'?(yo?.rol==='admin'?'Administrador':'Mi cuenta'):'Cambiar usuario'}
+function menuUsuario(){if(modo!=='nube')return pedirUsuario();if(!yo)return pedirLogin();$('#cNom').textContent=yo.nombre;$('#bAdm').hidden=yo.rol!=='admin';$('#dCta').showModal()}
 function pedirUsuario(){$('#uNom').value=usuario;$('#dUsr').showModal()}
 function fijarUsuario(){const u=$('#uNom').value.trim().toUpperCase();if(!u)return;usuario=u;try{localStorage.setItem('pc_usuario',u)}catch(e){}pintarUsuario();$('#dUsr').close()}
-async function api(url,metodo='GET',cuerpo){const r=await fetch(url,{method:metodo,headers:{'Content-Type':'application/json','X-Usuario':encodeURIComponent(usuario||'SIN NOMBRE')},body:cuerpo&&JSON.stringify(cuerpo)});
- if(!r.ok)throw new Error(r.status);return r.json()}
+async function api(url,metodo='GET',cuerpo){const h={'Content-Type':'application/json'};if(modo==='local')h['X-Usuario']=encodeURIComponent(usuario||'SIN NOMBRE');
+ const r=await fetch(url,{method:metodo,headers:h,body:cuerpo&&JSON.stringify(cuerpo),credentials:'same-origin'});
+ let d=null;try{d=await r.json()}catch(e){}
+ if(r.status===401&&modo==='nube'&&url!=='/api/login'){yo=null;pedirLogin()}
+ if(!r.ok){const e=new Error(d?.error||'Error '+r.status);e.status=r.status;e.datos=d;throw e}return d}
+async function detectarModo(){try{yo=await api('/api/yo');modo='nube';usuario=yo.nombre;return true}
+ catch(e){if(e.status===401){modo='nube';return false}modo='local';return true}}
+function pedirLogin(){if($('#dLogin').open)return;$('#lErr').textContent='';$('#dLogin').showModal();setTimeout(()=>$('#lUsr').focus(),50)}
+async function entrar(){$('#lErr').textContent='';try{yo=await api('/api/login','POST',{usuario:$('#lUsr').value,clave:$('#lClv').value});
+  $('#lClv').value='';usuario=yo.nombre;pintarUsuario();$('#dLogin').close();if(alEntrar){const f=alEntrar;alEntrar=null;f()}else sincronizar()}
+ catch(e){$('#lErr').textContent=e.status?e.message:'Sin conexión con el servidor'}}
+async function salir(){try{await api('/api/logout','POST')}catch(e){}location.reload()}
+function abrirClave(){['#cAct','#cNue','#cRep'].forEach(s=>$(s).value='');$('#cErr').textContent='';$('#dClave').showModal()}
+async function cambiarClave(){if($('#cNue').value!==$('#cRep').value)return $('#cErr').textContent='Las contraseñas nuevas no coinciden';
+ try{await api('/api/clave','POST',{actual:$('#cAct').value,nueva:$('#cNue').value});$('#dClave').close();toast('Contraseña actualizada')}catch(e){$('#cErr').textContent=e.message}}
+let USRS=[];
+async function abrirAdm(){limpiarUsr();$('#dAdm').showModal();try{USRS=await api('/api/usuarios');
+ $('#uLista').innerHTML=USRS.map((u,i)=>`<tr onclick="editarUsr(${i})"><td>${esc(u.usuario)}</td><td>${esc(u.nombre)}</td><td>${u.rol==='admin'?'Administrador':'Funcionario'}</td><td>${u.activo?'Activo':'Inactivo'}</td></tr>`).join('')}catch(e){$('#aErr').textContent=e.message}}
+function limpiarUsr(){['#aUsr','#aNom','#aClv'].forEach(s=>$(s).value='');$('#aUsr').readOnly=false;$('#aRol').value='funcionario';$('#aAct').checked=true;$('#aErr').textContent=''}
+function editarUsr(i){const u=USRS[i];$('#aUsr').value=u.usuario;$('#aUsr').readOnly=true;$('#aNom').value=u.nombre;$('#aRol').value=u.rol;$('#aAct').checked=!!u.activo;$('#aClv').value='';$('#aErr').textContent=''}
+async function guardarUsr(){try{await api('/api/usuarios','POST',{usuario:$('#aUsr').value,nombre:$('#aNom').value,rol:$('#aRol').value,activo:$('#aAct').checked,clave:$('#aClv').value||undefined});
+ toast('Usuario guardado');abrirAdm()}catch(e){$('#aErr').textContent=e.message}}
 function absorber(filas){filas.forEach(r=>{r.estado=estado(r);r.ppu=r.ppu||'';r.materia=r.materia||'';const v=POR_ID.get(r.id);if(v)Object.assign(v,r);else{POR_ID.set(r.id,r);DATA.push(r)}})}
-async function sincronizar(){try{const d=await api('/api/registros?desde='+ultimo);ultimo=d.ahora;
+async function sincronizar(){if(modo==='nube'&&!yo)return;try{const d=await api('/api/registros?desde='+ultimo);ultimo=d.ahora;
   if(d.filas.length){absorber(d.filas);if(!$('#drawer').classList.contains('on'))render()}
-  $('#sync').textContent='Conectado';$('#dot').classList.remove('off')}catch(e){$('#sync').textContent='Sin conexión';$('#dot').classList.add('off')}}
+  $('#sync').textContent='Conectado';$('#dot').classList.remove('off')}catch(e){$('#sync').textContent=e.status===401?'Sesión expirada':'Sin conexión';$('#dot').classList.add('off')}}
 
 /* ---------- navegación ---------- */
 const base=()=>{const a=$('#anio').value;return a?DATA.filter(r=>r.hoja===a):DATA};
@@ -282,7 +341,7 @@ function panel(){
  const k=[['i-doc','Documentos ingresados',nf(d.length),'','',''],['i-clock','Pendientes',nf(pend.length),'w','PENDIENTE',''],
   ['i-swap','Traslados',nf(d.filter(r=>r.tipo==='TRASLADO').length),'','','TRASLADO'],['i-lock','Bloqueos',nf(d.filter(r=>r.tipo==='BLOQUEO').length),'b','','BLOQUEO'],
   ['i-money','Montos informados',clp(d.reduce((s,r)=>s+(+r.monto||0),0)),'','','PAGO / FONDOS']];
- $('#kpis').innerHTML=k.map(([i,t,v,c,e,ti])=>`<div class="kpi ${c}" onclick="filtrar('${e}','${ti}')"><i><svg><use href="#${i}"/></svg></i><div><span>${t}</span><b>${v}</b></div></div>`).join('');
+ $('#kpis').innerHTML=k.map(([i,t,v,c,e,ti])=>`<div class="kpi ${c}" onclick="filtrar('${esc(e)}','${esc(ti)}')"><i><svg><use href="#${i}"/></svg></i><div><span>${t}</span><b>${v}</b></div></div>`).join('');
  const m=Array(12).fill(0);d.forEach(r=>{const x=+r.fecha?.slice(5,7);if(x)m[x-1]++});$('#sMes').textContent=$('#anio').value||'todos los años';
  chart('cMes',{type:'bar',data:{labels:['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'],datasets:[{data:m,backgroundColor:'#157347',borderRadius:5,maxBarThickness:34}]},options:{scales:{x:{grid:{display:false}}}}});
  const t={};d.forEach(r=>t[r.tipo]=(t[r.tipo]||0)+1);const te=Object.entries(t).sort((a,b)=>b[1]-a[1]);
@@ -343,9 +402,11 @@ fm.materia.addEventListener('input',e=>{if(editId)return;const u=e.target.value.
  if(t)fm.tipo.value=t[0]});
 async function guardarFicha(e){e.preventDefault();const o={};
  ['fecha','proc_','doc','tipo','materia','procedimiento','archivo'].forEach(k=>o[k]=fm[k].value.trim());
- o.ppu=fm.ppu.value.toUpperCase().replace(/[.-]/g,'').split(/[\s,\/]+/).filter(Boolean).join(' ');o.dest=fm.dest.value.trim().toUpperCase();o.monto=+fm.monto.value||0;o.proc_=o.proc_.toUpperCase();
+ o.ppu=fm.ppu.value.toUpperCase().replace(/[.-]/g,'').split(/[\s,\/]+/).filter(Boolean).join(' ');o.dest=fm.dest.value.trim().toUpperCase();o.monto=+fm.monto.value||0;o.proc_=o.proc_.toUpperCase();if(editId)o.version=POR_ID.get(editId)?.actualizado;
  try{const r=editId?await api('/api/registros/'+editId,'PUT',o):await api('/api/registros','POST',o);absorber([r]);
-  toast(editId?`Ingreso N° ${r.n} actualizado`:`Ingreso guardado con N° ${r.n}`);cerrar();render()}catch(err){toast('No se pudo guardar: el servidor no responde')}}
+  toast(editId?`Ingreso N° ${r.n} actualizado`:`Ingreso guardado con N° ${r.n}`);cerrar();render()}catch(err){
+  if(err.status===409&&err.datos?.registro){absorber([err.datos.registro]);render();toast(err.message);return} // el formulario conserva lo escrito
+  toast(err.status===401?'Inicia sesión y vuelve a guardar':err.status?'No se pudo guardar: '+err.message:'No se pudo guardar: el servidor no responde')}}
 
 /* ---------- patente ---------- */
 $('#qp').oninput=ppu;
@@ -360,7 +421,7 @@ function ppu(){const q=$('#qp').value.toUpperCase().replace(/[\s.-]/g,'');
    <div>${esc(r.materia)}</div><div class="more" style="margin-top:6px">${esc(r.dest)||'—'} · ${esc(r.procedimiento)||'Sin procedimiento'}</div></div>`).join('')+'</div>':'<div class="empty">No hay registros para esta patente.</div>')}
 
 /* ---------- exportar ---------- */
-function exportar(){if(!window.XLSX)return toast('Se necesita internet para exportar');
+function exportar(){if(!window.XLSX)return toast('No se pudo cargar el exportador de Excel');
  const src=vista==='planilla'||vista==='pend'?filas:base();
  const cols=[['n','N°'],['fecha','Fecha'],['proc_','Procedencia'],['doc','Documento'],['tipo','Tipo'],['materia','Materia'],['ppu','Patente'],['dest','Destinado a'],['procedimiento','Procedimiento'],['archivo','Destino documento'],['monto','Monto'],['estado','Estado']];
  const ws=XLSX.utils.json_to_sheet(src.map(r=>Object.fromEntries(cols.map(([k,t])=>[t,k==='fecha'?fmtF(r.fecha):r[k]]))));
@@ -370,11 +431,13 @@ function exportar(){if(!window.XLSX)return toast('Se necesita internet para expo
 /* ---------- inicio ---------- */
 async function inicio(){
  if(location.protocol==='file:'){document.body.innerHTML='<div class="empty" style="margin:auto"><h2>Abre el sistema con INICIAR.bat</h2></div>';return}
- pintarUsuario();if(!usuario)pedirUsuario();
- await sincronizar();if(!DATA.length)return;
- const anios=[...new Set(DATA.map(r=>r.hoja))].sort().reverse();
+ const sesion=await detectarModo();pintarUsuario();
+ if(modo==='local'&&!usuario)pedirUsuario();
+ if(!sesion)await new Promise(res=>{alEntrar=res;pedirLogin()});
+ await sincronizar();
+ const anios=[...new Set([...DATA.map(r=>r.hoja).filter(Boolean),String(new Date().getFullYear())])].sort().reverse();
  $('#anio').innerHTML='<option value="">Todos los años</option>'+anios.map(a=>`<option>${a}</option>`).join('');$('#anio').value=anios[0];$('#anio').onchange=render;
- const tipos=[...new Set(DATA.map(r=>r.tipo))].sort();
+ const tipos=[...new Set([...DATA.map(r=>r.tipo).filter(Boolean),'TRASLADO','BLOQUEO','DESBLOQUEO','LEY 18.440','PAGO / FONDOS','PRESCRIPCION','DEVOLUCION','PLACAS PROVISORIAS','MULTAS / RNMP','EXENTOS','INE / ESTADISTICA','BAJA / ROBO','OTROS'])].sort();
  $('#fTipo').innerHTML+=tipos.map(t=>`<option>${t}</option>`).join('');$('#dTipo').innerHTML=tipos.map(t=>`<option>${t}</option>`).join('');
  const topN=(k,n,min=1)=>{const c={};DATA.slice(-5000).forEach(r=>{if(r[k])c[r[k]]=(c[r[k]]||0)+1});return Object.entries(c).filter(x=>x[1]>=min).sort((a,b)=>b[1]-a[1]).slice(0,n)};
  $('#lProc').innerHTML=topN('proc_',300).map(x=>`<option value="${esc(x[0])}">`).join('');

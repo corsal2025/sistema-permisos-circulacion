@@ -1,7 +1,9 @@
 # Convierte CORRESPONDENCIA*.xlsx a data.js normalizado para el dashboard.
 import openpyxl, re, json, glob, os, datetime
 BASE = os.path.dirname(os.path.abspath(__file__))
-src = glob.glob(os.path.join(BASE, '..', 'CORRESPONDENCIA*.xlsx'))[0]
+archivos = glob.glob(os.path.join(BASE, '..', 'CORRESPONDENCIA*.xlsx'))
+if not archivos: raise SystemExit('No se encontró CORRESPONDENCIA*.xlsx en la carpeta del proyecto.')
+src = archivos[0]
 wb = openpyxl.load_workbook(src, read_only=True, data_only=True)
 
 ALIAS = {'FECHA':'fecha','PROCEDENCIA':'procedencia','DOCUMENTO':'documento','DOCTO':'documento',
@@ -48,7 +50,8 @@ for ws in wb.worksheets:
         ppus = sorted({re.sub(r'[\s-]','',m[1]) for m in PPU.finditer(up)
                        if not re.fullmatch(r'(ORD|MAIL|ROL|PROV|MEMO|CART)\w*', re.sub(r'[\s-]','',m[1])[:4])})
         montos = [int(x.replace('.','')) for x in MONTO.findall(materia) if x.replace('.','').isdigit()]
-        dest = re.sub(r'\s*\d{1,2}\.\d{1,2}\.\d{2,4}.*','', g('destinado').upper()).replace('EL','').strip()
+        dest = re.sub(r'\s*\d{1,2}\.\d{1,2}\.\d{2,4}.*','', g('destinado').upper())
+        dest = re.sub(r'^EL\s+', '', dest).strip()
         dest = NOMBRES.get(dest, dest)
         proc = g('procedimiento')
         f = fecha(g('fecha'))

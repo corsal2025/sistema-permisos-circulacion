@@ -1,0 +1,20 @@
+name: Servidor .NET
+
+on:
+  push:
+    paths: ['servidor/**', '.github/workflows/servidor.yml']
+  pull_request:
+    paths: ['servidor/**', '.github/workflows/servidor.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  compilar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build servidor/Servidor.csproj -c Release
