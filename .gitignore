@@ -1,0 +1,17 @@
+# Datos personales de contribuyentes: NUNCA subir
+*.xlsx
+*.xls
+*.csv
+data.js
+*.db
+*.db-*
+
+# Compilados (se generan con PUBLICAR.bat)
+SISTEMA/
+servidor/bin/
+servidor/obj/
+
+# Locales
+.claude/
+*.log
+out.txt
