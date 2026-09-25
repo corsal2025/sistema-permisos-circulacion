@@ -8,6 +8,7 @@ const CUERPO_MAX = 64 * 1024;
 const SESION_HORAS = 12;
 const INTENTOS_MAX = 5, BLOQUEO_MIN = 15;
 const ITERACIONES = 100_000; // máximo que admite PBKDF2 en Workers
+const ADJUNTO_MAX = 15 * 1024 * 1024;
 
 const ahora = () => Date.now() / 1000;
 const enc = new TextEncoder();
@@ -256,6 +257,86 @@ async function editarRegistro(id, req, env, yo) {
   return json(actual);
 }
 
+// ---------- adjuntos (PDF del oficio, escaneos, respuesta) ----------
+const COLS_ADJ = 'id, registro_id, nombre, tipo, tamano, subido_por, fecha';
+
+function tipoPermitido(tipo, d) {
+  // Se confía en la firma del archivo, no en lo que declara el navegador.
+  const empieza = (...f) => d.length >= f.length && f.every((b, i) => d[i] === b);
+  if (empieza(0x25, 0x50, 0x44, 0x46)) return 'application/pdf';
+  if (empieza(0xFF, 0xD8, 0xFF)) return 'image/jpeg';
+  if (empieza(0x89, 0x50, 0x4E, 0x47)) return 'image/png';
+  if (empieza(0x49, 0x49, 0x2A, 0x00) || empieza(0x4D, 0x4D, 0x00, 0x2A)) return 'image/tiff';
+  if (empieza(0x50, 0x4B, 0x03, 0x04) && tipo.includes('officedocument')) return tipo;
+  if (empieza(0xD0, 0xCF, 0x11, 0xE0)) return tipo.startsWith('application/') ? tipo : 'application/octet-stream';
+  if (tipo === 'message/rfc822') return tipo;
+  return null;
+}
+
+async function listarAdjuntos(id, env) {
+  const r = await env.DB.prepare(`SELECT ${COLS_ADJ} FROM adjuntos WHERE registro_id = ? ORDER BY fecha`).bind(id).all();
+  return json(r.results);
+}
+
+async function subirAdjunto(id, req, env, yo) {
+  if (Number(req.headers.get('Content-Length')) > ADJUNTO_MAX) throw new ErrorHttp(413, 'El archivo supera 15 MB');
+  const datos = new Uint8Array(await req.arrayBuffer());
+  if (datos.length > ADJUNTO_MAX) throw new ErrorHttp(413, 'El archivo supera 15 MB');
+  if (!datos.length) throw new ErrorHttp(400, 'Archivo vacío');
+  const tipo = tipoPermitido(req.headers.get('Content-Type') || '', datos);
+  if (!tipo) throw new ErrorHttp(415, 'Tipo de archivo no permitido (PDF, imagen, Word, Excel o correo)');
+  let nombre;
+  try { nombre = decodeURIComponent(req.headers.get('X-Nombre') || 'documento'); } catch { nombre = 'documento'; }
+  nombre = nombre.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim().slice(0, 150) || 'documento';
+  if (!await env.DB.prepare('SELECT 1 FROM registros WHERE id = ?').bind(id).first()) throw new ErrorHttp(404, 'Registro no encontrado');
+  const clave = `${id}/${aleatorioHex(16)}`;
+  await env.ARCHIVOS.put(clave, datos, { httpMetadata: { contentType: tipo } });
+  const t = ahora();
+  try {
+    const [ins] = await env.DB.batch([
+      env.DB.prepare(`INSERT INTO adjuntos(registro_id, nombre, tipo, tamano, clave, subido_por, fecha) VALUES(?,?,?,?,?,?,?) RETURNING ${COLS_ADJ}`)
+        .bind(id, nombre, tipo, datos.length, clave, yo.nombre, t),
+      env.DB.prepare(`INSERT INTO historial(registro_id, usuario, campo, antes, despues, fecha) VALUES(?, ?, 'ADJUNTO', '', ?, ?)`)
+        .bind(id, yo.nombre, nombre, t),
+    ]);
+    return json(ins.results[0], 201);
+  } catch (e) {
+    await env.ARCHIVOS.delete(clave); // no dejar archivos huérfanos en R2
+    throw e;
+  }
+}
+
+async function bajarAdjunto(id, env) {
+  const a = await env.DB.prepare('SELECT nombre, tipo, clave FROM adjuntos WHERE id = ?').bind(id).first();
+  if (!a) throw new ErrorHttp(404, 'Adjunto no encontrado');
+  const obj = await env.ARCHIVOS.get(a.clave);
+  if (!obj) throw new ErrorHttp(404, 'El archivo no está en el almacenamiento');
+  const enLinea = a.tipo === 'application/pdf' || a.tipo.startsWith('image/');
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': a.tipo,
+      'Content-Disposition': `${enLinea ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(a.nombre)}`,
+      // el archivo se muestra aislado: sin scripts ni acceso a la sesión
+      'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; object-src 'self'",
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, no-store',
+    },
+  });
+}
+
+async function borrarAdjunto(id, env, yo) {
+  const a = await env.DB.prepare('SELECT registro_id, nombre, clave, subido_por FROM adjuntos WHERE id = ?').bind(id).first();
+  if (!a) throw new ErrorHttp(404, 'Adjunto no encontrado');
+  if (yo.rol !== 'admin' && a.subido_por !== yo.nombre) throw new ErrorHttp(403, 'Solo quien lo subió o un administrador puede quitar el adjunto');
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM adjuntos WHERE id = ?').bind(id),
+    env.DB.prepare(`INSERT INTO historial(registro_id, usuario, campo, antes, despues, fecha) VALUES(?, ?, 'ADJUNTO', ?, '', ?)`)
+      .bind(a.registro_id, yo.nombre, a.nombre, ahora()),
+  ]);
+  await env.ARCHIVOS.delete(a.clave);
+  return json({ ok: true });
+}
+
 // ---------- enrutador ----------
 async function api(req, env) {
   const url = new URL(req.url);
@@ -280,6 +361,14 @@ async function api(req, env) {
   let r;
   if ((r = p.match(/^\/api\/registros\/(\d+)$/)) && m === 'PUT') return editarRegistro(+r[1], req, env, yo);
   if ((r = p.match(/^\/api\/historial\/(\d+)$/)) && m === 'GET') return historial(+r[1], env);
+  if ((r = p.match(/^\/api\/registros\/(\d+)\/adjuntos$/))) {
+    if (m === 'GET') return listarAdjuntos(+r[1], env);
+    if (m === 'POST') return subirAdjunto(+r[1], req, env, yo);
+  }
+  if ((r = p.match(/^\/api\/adjuntos\/(\d+)$/))) {
+    if (m === 'GET') return bajarAdjunto(+r[1], env);
+    if (m === 'DELETE') return borrarAdjunto(+r[1], env, yo);
+  }
   if (p === '/api/usuarios') {
     if (yo.rol !== 'admin') throw new ErrorHttp(403, 'Solo administradores');
     if (m === 'GET') return listarUsuarios(env);

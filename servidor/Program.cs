@@ -12,6 +12,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Data.Sqlite;
 
 string? Opcion(string nombre) { var i = Array.IndexOf(args, nombre); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
@@ -21,6 +22,7 @@ var puerto = int.TryParse(Opcion("--puerto"), out var pu) ? pu : 8765;
 var cs = $"Data Source={Path.Combine(carpeta, "correspondencia.db")}";
 string[] campos = ["n", "hoja", "fecha", "proc_", "doc", "materia", "dest", "procedimiento", "archivo", "tipo", "ppu", "monto"];
 string[] editables = [.. campos.Where(k => k is not ("n" or "hoja"))];
+const int AdjuntoMax = 15 * 1024 * 1024;
 const int LargoMax = 4000, CuerpoMax = 64 * 1024, SesionHoras = 12, IntentosMax = 5, BloqueoMin = 15, Iteraciones = 100_000;
 var candado = new object();
 double Ahora() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
@@ -133,6 +135,10 @@ using (var c = Conectar())
           fallidos INTEGER NOT NULL DEFAULT 0, bloqueado_hasta REAL NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS sesiones(token_hash TEXT PRIMARY KEY, usuario TEXT NOT NULL, expira REAL NOT NULL);
         CREATE INDEX IF NOT EXISTS ix_ses_exp ON sesiones(expira);
+        CREATE TABLE IF NOT EXISTS adjuntos(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, registro_id INTEGER NOT NULL, nombre TEXT NOT NULL,
+          tipo TEXT NOT NULL, tamano INTEGER NOT NULL, datos BLOB NOT NULL, subido_por TEXT, fecha REAL);
+        CREATE INDEX IF NOT EXISTS ix_adj ON adjuntos(registro_id);
         """);
 
     if (args.Contains("--crear-usuario"))
@@ -275,7 +281,7 @@ app.Use(async (ctx, siguiente) =>
     h["X-Frame-Options"] = "DENY";
     h["X-Content-Type-Options"] = "nosniff";
     h["Referrer-Policy"] = "same-origin";
-    h["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+    h["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
     if (!ctx.Request.Path.StartsWithSegments("/api")) { await siguiente(); return; }
     h.CacheControl = "no-store";
     try
@@ -306,7 +312,10 @@ app.Use(async (ctx, siguiente) =>
     }
 });
 app.UseDefaultFiles();
-app.UseStaticFiles();
+var tipos = new FileExtensionContentTypeProvider();
+tipos.Mappings[".mjs"] = "text/javascript";
+tipos.Mappings[".gz"] = "application/gzip"; // el OCR descomprime el diccionario por su cuenta
+app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = tipos });
 
 Sesion Yo(HttpContext ctx) => (Sesion)ctx.Items["yo"]!;
 
@@ -496,6 +505,88 @@ app.MapPut("/api/registros/{id:long}", async (long id, HttpContext ctx) =>
             tx.Commit();
         }
         return Results.Json(Uno(c, "SELECT * FROM registros WHERE id=$p0", id));
+    }
+});
+
+// ---------- adjuntos (PDF del oficio, escaneos, respuesta) ----------
+string? TipoPermitido(string tipo, byte[] d)
+{
+    // Se confía en la firma del archivo, no en lo que declara el navegador.
+    bool Empieza(params byte[] f) => d.Length >= f.Length && d.AsSpan(0, f.Length).SequenceEqual(f);
+    if (Empieza(0x25, 0x50, 0x44, 0x46)) return "application/pdf";
+    if (Empieza(0xFF, 0xD8, 0xFF)) return "image/jpeg";
+    if (Empieza(0x89, 0x50, 0x4E, 0x47)) return "image/png";
+    if (Empieza(0x49, 0x49, 0x2A, 0x00) || Empieza(0x4D, 0x4D, 0x00, 0x2A)) return "image/tiff";
+    if (Empieza(0x50, 0x4B, 0x03, 0x04) && tipo.Contains("officedocument")) return tipo; // docx / xlsx
+    if (Empieza(0xD0, 0xCF, 0x11, 0xE0)) return tipo.StartsWith("application/") ? tipo : "application/octet-stream"; // doc / xls / msg
+    if (tipo == "message/rfc822") return tipo;
+    return null;
+}
+
+app.MapGet("/api/registros/{id:long}/adjuntos", (long id) =>
+{
+    using var c = Conectar();
+    return Results.Json(Consultar(c, "SELECT id, registro_id, nombre, tipo, tamano, subido_por, fecha FROM adjuntos WHERE registro_id=$p0 ORDER BY fecha", id));
+});
+
+app.MapPost("/api/registros/{id:long}/adjuntos", async (long id, HttpContext ctx) =>
+{
+    var yo = Yo(ctx);
+    if (ctx.Request.ContentLength > AdjuntoMax) throw new ErrorHttp(413, "El archivo supera 15 MB");
+    using var ms = new MemoryStream();
+    var buf = new byte[81920];
+    int n;
+    while ((n = await ctx.Request.Body.ReadAsync(buf)) > 0)
+    {
+        ms.Write(buf, 0, n);
+        if (ms.Length > AdjuntoMax) throw new ErrorHttp(413, "El archivo supera 15 MB");
+    }
+    var datos = ms.ToArray();
+    if (datos.Length == 0) throw new ErrorHttp(400, "Archivo vacío");
+    var tipo = TipoPermitido(ctx.Request.ContentType ?? "", datos) ?? throw new ErrorHttp(415, "Tipo de archivo no permitido (PDF, imagen, Word, Excel o correo)");
+    var nombre = Regex.Replace(Uri.UnescapeDataString(ctx.Request.Headers["X-Nombre"].FirstOrDefault() ?? "documento"), @"[\\/:*?""<>|\x00-\x1f]", "_").Trim();
+    if (nombre == "") nombre = "documento";
+    if (nombre.Length > 150) nombre = nombre[..150];
+    lock (candado)
+    {
+        using var c = Conectar();
+        if (Uno(c, "SELECT 1 AS x FROM registros WHERE id=$p0", id) is null) throw new ErrorHttp(404, "Registro no encontrado");
+        var t = Ahora();
+        using var tx = c.BeginTransaction();
+        Ejecutar(c, "INSERT INTO adjuntos(registro_id, nombre, tipo, tamano, datos, subido_por, fecha) VALUES($p0,$p1,$p2,$p3,$p4,$p5,$p6)",
+                 id, nombre, tipo, datos.Length, datos, yo.Nombre, t);
+        var aid = (long)Uno(c, "SELECT last_insert_rowid() AS id")!["id"]!;
+        Ejecutar(c, "INSERT INTO historial(registro_id,usuario,campo,antes,despues,fecha) VALUES($p0,$p1,'ADJUNTO','',$p2,$p3)", id, yo.Nombre, nombre, t);
+        tx.Commit();
+        return Results.Json(Uno(c, "SELECT id, registro_id, nombre, tipo, tamano, subido_por, fecha FROM adjuntos WHERE id=$p0", aid), statusCode: 201);
+    }
+});
+
+app.MapGet("/api/adjuntos/{id:long}", (long id, HttpContext ctx) =>
+{
+    using var c = Conectar();
+    var a = Uno(c, "SELECT nombre, tipo, datos FROM adjuntos WHERE id=$p0", id) ?? throw new ErrorHttp(404, "Adjunto no encontrado");
+    var tipo = (string)a["tipo"]!;
+    var enLinea = tipo == "application/pdf" || tipo.StartsWith("image/");
+    // el archivo se muestra aislado: sin scripts ni acceso a la sesión
+    ctx.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; object-src 'self'";
+    ctx.Response.Headers.ContentDisposition = $"{(enLinea ? "inline" : "attachment")}; filename*=UTF-8''{Uri.EscapeDataString((string)a["nombre"]!)}";
+    return Results.Bytes((byte[])a["datos"]!, tipo);
+});
+
+app.MapDelete("/api/adjuntos/{id:long}", (long id, HttpContext ctx) =>
+{
+    var yo = Yo(ctx);
+    lock (candado)
+    {
+        using var c = Conectar();
+        var a = Uno(c, "SELECT registro_id, nombre, subido_por FROM adjuntos WHERE id=$p0", id) ?? throw new ErrorHttp(404, "Adjunto no encontrado");
+        if (yo.Rol != "admin" && (string?)a["subido_por"] != yo.Nombre) throw new ErrorHttp(403, "Solo quien lo subió o un administrador puede quitar el adjunto");
+        using var tx = c.BeginTransaction();
+        Ejecutar(c, "DELETE FROM adjuntos WHERE id=$p0", id);
+        Ejecutar(c, "INSERT INTO historial(registro_id,usuario,campo,antes,despues,fecha) VALUES($p0,$p1,'ADJUNTO',$p2,'',$p3)", a["registro_id"], yo.Nombre, a["nombre"], Ahora());
+        tx.Commit();
+        return Results.Json(new { ok = true });
     }
 });
 

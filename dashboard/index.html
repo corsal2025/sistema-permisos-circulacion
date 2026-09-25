@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="vendor/xlsx.full.min.js" defer></script>
 <script src="vendor/chart.umd.js"></script>
+<script src="js/leer-oficio.js"></script>
 <style>
 :root{
   --bg:#f5f7fa;--panel:#fff;--ink:#0f172a;--ink2:#334155;--mut:#64748b;--line:#e2e8f0;--line2:#f1f5f9;
@@ -108,6 +109,11 @@ td.pro{text-align:left;max-width:280px}
 .db input[readonly]{background:var(--line2);color:var(--mut)}
 .db textarea{resize:vertical;min-height:90px}
 .hint{font-weight:400;color:var(--mut);font-size:11px}
+.docs{grid-column:1/-1;border-top:1px solid var(--line);padding-top:14px;display:grid;gap:8px}.docs h4{margin:0;font-size:13px}
+.doc{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}.doc a,.doc>span:first-child{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--ink)}
+.doc .x{width:26px;height:26px;border:0;background:none;cursor:pointer;color:var(--mut);font-size:18px;line-height:1;border-radius:6px}.doc .x:hover{background:var(--line2);color:var(--bad)}
+.drop{border:1.5px dashed var(--line);border-radius:10px;padding:14px;text-align:center;cursor:pointer;font-size:13px;display:grid;gap:4px;transition:border-color .15s,background .15s}.drop:hover,.drop.sobre{border-color:var(--brand2);background:var(--brandbg)}.drop:focus-within{border-color:var(--brand2)}
+.db .auto{background:#fffbeb;border-color:#f59e0b}
 .hist{grid-column:1/-1;border-top:1px solid var(--line);padding-top:14px}
 .hist:empty{display:none}
 .hist h4{margin:0 0 10px;font-size:13px}
@@ -228,6 +234,10 @@ dialog .fila{display:flex;gap:8px}dialog .fila .btn{width:auto;flex:1}dialog .co
     <label class="f">Procedimiento <span class="hint">vacío = pendiente</span><textarea name="procedimiento" style="min-height:60px"></textarea></label>
     <label>Destino documento<input name="archivo" list="lArch"></label>
     <label>Monto $<input type="number" name="monto" min="0"></label>
+    <div class="docs"><h4>Documentos</h4><div id="dLista" style="display:grid;gap:6px"></div>
+      <label class="drop" id="drop"><input type="file" id="fArch" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.msg,.eml" style="position:absolute;opacity:0;width:1px;height:1px">
+        <b>Arrastra aquí el oficio o haz clic para elegirlo</b><span class="hint">En un ingreso nuevo, un PDF o una foto del documento completa sola la procedencia, el N°, la materia y las patentes</span></label>
+      <div class="more" id="ocrEstado" aria-live="polite"></div></div>
     <div class="hist" id="hist"></div>
   </div>
   <div class="df"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri">Guardar</button></div>
@@ -384,30 +394,74 @@ $('#tb').onclick=e=>{const tr=e.target.closest('tr[data-id]');if(tr)abrir(+tr.da
 const CAMPOS=['n','fecha','proc_','doc','tipo','materia','ppu','dest','procedimiento','archivo','monto'];
 let editId=null;const fm=$('#drawer').elements;
 function mostrar(){$('#drawer').classList.add('on');$('#veil').classList.add('on');setTimeout(()=>fm.proc_.focus(),230)}
-function cerrar(){$('#drawer').classList.remove('on');$('#veil').classList.remove('on');activa=null;document.querySelectorAll('#tb tr.act').forEach(x=>x.classList.remove('act'))}
+function cerrar(){lectura++;porSubir=[];$('#drawer').classList.remove('on');$('#veil').classList.remove('on');activa=null;document.querySelectorAll('#tb tr.act').forEach(x=>x.classList.remove('act'))}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#drawer').classList.contains('on'))cerrar()});
 function nuevo(){editId=null;$('#drawer').reset();fm.n.value='Automático';fm.fecha.value=new Date().toLocaleDateString('sv');fm.tipo.value='OTROS';
- $('#dT').textContent='Nuevo ingreso';$('#dS').textContent='Registrado por '+(usuario||'—');$('#hist').innerHTML='';mostrar()}
+ $('#dT').textContent='Nuevo ingreso';$('#dS').textContent='Registrado por '+(usuario||'—');$('#hist').innerHTML='';
+ porSubir=[];ADJ=[];pintarDocs();$('#ocrEstado').textContent='';document.querySelectorAll('#drawer .auto').forEach(x=>x.classList.remove('auto'));mostrar()}
 function abrir(id){const r=POR_ID.get(id);if(!r)return;editId=id;activa=id;
  document.querySelectorAll('#tb tr').forEach(x=>x.classList.toggle('act',+x.dataset.id===id));
  CAMPOS.forEach(k=>fm[k].value=r[k]??'');if(!+r.monto)fm.monto.value='';
  $('#dT').textContent=`Ingreso N° ${r.n} · ${r.hoja}`;$('#dS').innerHTML=tag(r.tipo)+stp(r.estado);
- $('#hist').innerHTML='<h4>Historial de cambios</h4><div class="more">Cargando…</div>';mostrar();
- api('/api/historial/'+id).then(h=>{$('#hist').innerHTML='<h4>Historial de cambios</h4>'+(h.length?h.map(x=>`<div class="ev"><div class="avatar">${esc(ini(x.usuario))}</div><div>
+ $('#hist').innerHTML='<h4>Historial de cambios</h4><div class="more">Cargando…</div>';mostrar();porSubir=[];$('#ocrEstado').textContent='';cargarDocs(id);cargarHist(id)}
+function cargarHist(id){api('/api/historial/'+id).then(h=>{$('#hist').innerHTML='<h4>Historial de cambios</h4>'+(h.length?h.map(x=>`<div class="ev"><div class="avatar">${esc(ini(x.usuario))}</div><div>
   <b>${esc(x.usuario)}</b> ${x.campo==='CREADO'?'creó el ingreso':`cambió <b>${esc(x.campo)}</b>: <s>${esc(x.antes)||'vacío'}</s> → ${esc(x.despues)||'vacío'}`}
   <div class="more">${new Date(x.fecha*1000).toLocaleString('es-CL')}</div></div></div>`).join(''):'<div class="more">Importado del Excel histórico, sin cambios posteriores.</div>')}).catch(()=>{})}
-fm.materia.addEventListener('input',e=>{if(editId)return;const u=e.target.value.toUpperCase();
- const m=[...u.matchAll(/\b([A-Z]{4}\s?-?\d{2}|[A-Z]{2}\s?-?\d{4}|[A-Z]{3}\s?-?\d{3})\b/g)].map(x=>x[1].replace(/[\s-]/g,'')).filter(p=>!/^(ORD|MAIL|PROV|MEMO)/.test(p));
- if(m.length)fm.ppu.value=[...new Set(m)].join(' ');
- const t=[['DESBLOQUEO',/DESBLOQ/],['BLOQUEO',/BLOQUE/],['TRASLADO',/TRASLAD/],['PAGO / FONDOS',/CHEQUE|DEPOSITO|TRANSFERENCIA|FONDOS|MONTO/],['LEY 18.440',/18\.?440|NO CIRCULAR/],['PRESCRIPCION',/PRESCRIP/],['DEVOLUCION',/DEVOLUC/],['EXENTOS',/EXENT/]].find(([,p])=>p.test(u));
- if(t)fm.tipo.value=t[0]});
+fm.materia.addEventListener('input',e=>{if(editId)return;const u=e.target.value;
+ const p=detectarPatentes(u);if(p.length)fm.ppu.value=p.join(' ');const t=detectarTipo(u);if(t!=='OTROS')fm.tipo.value=t});
 async function guardarFicha(e){e.preventDefault();const o={};
  ['fecha','proc_','doc','tipo','materia','procedimiento','archivo'].forEach(k=>o[k]=fm[k].value.trim());
  o.ppu=fm.ppu.value.toUpperCase().replace(/[.-]/g,'').split(/[\s,\/]+/).filter(Boolean).join(' ');o.dest=fm.dest.value.trim().toUpperCase();o.monto=+fm.monto.value||0;o.proc_=o.proc_.toUpperCase();if(editId)o.version=POR_ID.get(editId)?.actualizado;
  try{const r=editId?await api('/api/registros/'+editId,'PUT',o):await api('/api/registros','POST',o);absorber([r]);
+  if(!editId&&porSubir.length){let mal=0;for(const f of porSubir){try{await subirArchivo(r.id,f)}catch(e){mal++}}porSubir=[];if(mal)toast(`Ingreso N° ${r.n} guardado, pero ${mal} documento(s) no se pudieron subir`)}
   toast(editId?`Ingreso N° ${r.n} actualizado`:`Ingreso guardado con N° ${r.n}`);cerrar();render()}catch(err){
   if(err.status===409&&err.datos?.registro){absorber([err.datos.registro]);render();toast(err.message);return} // el formulario conserva lo escrito
   toast(err.status===401?'Inicia sesión y vuelve a guardar':err.status?'No se pudo guardar: '+err.message:'No se pudo guardar: el servidor no responde')}}
+
+/* ---------- documentos adjuntos y lectura automática ---------- */
+let porSubir=[],ADJ=[],lectura=0,tWorker=null;
+const kb=n=>n<1048576?Math.max(1,Math.round(n/1024))+' KB':(n/1048576).toFixed(1).replace('.',',')+' MB';
+function pintarDocs(){$('#dLista').innerHTML=ADJ.map(a=>`<div class="doc"><a href="/api/adjuntos/${a.id}" target="_blank" rel="noopener">${esc(a.nombre)}</a><span class="more">${kb(a.tamano)} · ${esc(a.subido_por||'')}</span><button type="button" class="x" title="Quitar documento" aria-label="Quitar ${esc(a.nombre)}" onclick="quitarAdj(${a.id})">×</button></div>`).join('')+
+ porSubir.map((f,i)=>`<div class="doc"><span>${esc(f.name)}</span><span class="more">${kb(f.size)} · se adjunta al guardar</span><button type="button" class="x" title="Quitar" aria-label="Quitar ${esc(f.name)}" onclick="porSubir.splice(${i},1);pintarDocs()">×</button></div>`).join('')}
+async function cargarDocs(id){ADJ=[];pintarDocs();try{ADJ=await api('/api/registros/'+id+'/adjuntos');if(editId===id)pintarDocs()}catch(e){}}
+async function subirArchivo(id,f){const h={'Content-Type':f.type||'application/octet-stream','X-Nombre':encodeURIComponent(f.name)};if(modo==='local')h['X-Usuario']=encodeURIComponent(usuario||'SIN NOMBRE');
+ const r=await fetch('/api/registros/'+id+'/adjuntos',{method:'POST',headers:h,body:f,credentials:'same-origin'});let d=null;try{d=await r.json()}catch(e){}
+ if(r.status===401&&modo==='nube'){yo=null;pedirLogin()}if(!r.ok)throw new Error(d?.error||'Error '+r.status);return d}
+async function quitarAdj(aid){try{await api('/api/adjuntos/'+aid,'DELETE');toast('Documento quitado');cargarDocs(editId);cargarHist(editId)}catch(e){toast(e.message)}}
+async function agregarArchivos(lista){const fs=[...lista].filter(f=>f.size>0);if(!fs.length)return;
+ const grandes=fs.filter(f=>f.size>15*1048576);if(grandes.length)toast('Máximo 15 MB por archivo: '+grandes.map(f=>f.name).join(', '));
+ const ok=fs.filter(f=>f.size<=15*1048576);if(!ok.length)return;
+ if(editId){const id=editId;for(const f of ok){try{await subirArchivo(id,f);toast('Documento agregado: '+f.name)}catch(e){toast(`No se pudo subir ${f.name}: ${e.message}`)}}if(editId===id){cargarDocs(id);cargarHist(id)}return}
+ porSubir.push(...ok);pintarDocs();const leer=ok.find(f=>f.type==='application/pdf'||/^image\/(png|jpeg|webp|bmp)$/.test(f.type));if(leer)leerDocumento(leer)}
+function cargarScript(src){return new Promise((ok,mal)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>mal(new Error('no se pudo cargar el lector'));document.head.appendChild(s)})}
+async function ocr(img,est){if(!window.Tesseract)await cargarScript('vendor/tesseract/tesseract.min.js');
+ if(!tWorker){const u=p=>new URL(p,location.href).href;tWorker=Tesseract.createWorker('spa',1,{workerPath:u('vendor/tesseract/worker.min.js'),corePath:u('vendor/tesseract/tesseract-core-simd-lstm.wasm.js'),langPath:u('vendor/tesseract'),workerBlobURL:false,
+  logger:m=>{if(m.status==='recognizing text')est.textContent=`Reconociendo texto del escaneo… ${Math.round(m.progress*100)}%`}}).catch(e=>{tWorker=null;throw e})}
+ const {data}=await (await tWorker).recognize(img);return data.text}
+async function textoPdf(f,est){const u=p=>new URL(p,location.href).href;const pdfjs=await import(u('vendor/pdfjs/pdf.min.mjs'));pdfjs.GlobalWorkerOptions.workerSrc=u('vendor/pdfjs/pdf.worker.min.mjs');
+ const doc=await pdfjs.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise;let t='';
+ for(let i=1;i<=Math.min(doc.numPages,2);i++){const c=await (await doc.getPage(i)).getTextContent();t+=c.items.map(x=>x.str+(x.hasEOL?'\n':' ')).join('')+'\n'}
+ if(t.replace(/\s/g,'').length>=40)return t;
+ // PDF escaneado (solo imagen): se dibuja la primera página y se le aplica OCR
+ est.textContent='Documento escaneado: reconociendo texto…';const pg=await doc.getPage(1),vp=pg.getViewport({scale:2.2}),cv=document.createElement('canvas');
+ cv.width=vp.width;cv.height=vp.height;await pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;return ocr(cv,est)}
+async function leerDocumento(f){const est=$('#ocrEstado'),n=++lectura;est.textContent='Leyendo '+f.name+'…';
+ try{const texto=f.type==='application/pdf'?await textoPdf(f,est):await ocr(f,est);if(n!==lectura||editId)return;
+  const d=leerOficio(texto),llenos=[];
+  if(d.doc&&d.fecha)d.doc+=' DEL '+fmtF(d.fecha); // la fecha del formulario es la de recepción; la del oficio va junto a su número
+  for(const k of ['proc_','doc','materia','ppu','monto']){const v=d[k];if(!v)continue;const el=fm[k];if(!String(el.value).trim()){el.value=v;el.classList.add('auto');llenos.push(k)}}
+  if(d.tipo!=='OTROS'&&fm.tipo.value==='OTROS'){fm.tipo.value=d.tipo;fm.tipo.classList.add('auto');llenos.push('tipo')}
+  const nom={proc_:'procedencia',doc:'documento',materia:'materia',ppu:'patente',monto:'monto',tipo:'tipo'};
+  est.textContent=llenos.length?`Se completaron desde el documento: ${llenos.map(k=>nom[k]).join(', ')}. Revisa los campos marcados en amarillo antes de guardar.`:'No se reconocieron datos en el documento; complétalo a mano. El archivo igual se adjunta.'}
+ catch(e){console.error(e);if(n===lectura)est.textContent=`No se pudo leer el documento (${e.message}). Complétalo a mano; el archivo igual se adjunta.`}}
+$('#fArch').onchange=e=>{agregarArchivos(e.target.files);e.target.value=''};
+const zona=$('#drop');['dragenter','dragover'].forEach(t=>zona.addEventListener(t,e=>{e.preventDefault();zona.classList.add('sobre')}));
+['dragleave','drop'].forEach(t=>zona.addEventListener(t,()=>zona.classList.remove('sobre')));
+zona.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();agregarArchivos(e.dataTransfer.files)});
+$('#drawer').addEventListener('input',e=>e.target.classList?.remove('auto'));
+// soltar un archivo en cualquier parte de la pantalla abre un ingreso nuevo con ese documento
+document.addEventListener('dragover',e=>{if([...(e.dataTransfer?.types||[])].includes('Files'))e.preventDefault()});
+document.addEventListener('drop',e=>{if(!e.dataTransfer?.files?.length)return;e.preventDefault();if(modo==='nube'&&!yo)return;if(!$('#drawer').classList.contains('on'))nuevo();agregarArchivos(e.dataTransfer.files)});
 
 /* ---------- patente ---------- */
 $('#qp').oninput=ppu;

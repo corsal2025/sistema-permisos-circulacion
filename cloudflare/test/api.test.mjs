@@ -171,3 +171,45 @@ test('cabeceras de seguridad en la interfaz', async () => {
   assert.equal(r.headers.get('x-frame-options'), 'DENY');
   assert.match(r.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
 });
+
+test('adjuntos: subir, listar, descargar aislado, rechazar tipos peligrosos y permisos para quitar', async () => {
+  const c = await entrar('ana', 'nueva-clave-789');
+  const reg = (await pedir('/api/registros', { metodo: 'POST', cookie: c, cuerpo: { fecha: '2026-05-05', proc_: 'SII', materia: 'Oficio con adjunto' } })).datos;
+  const pdf = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
+  const subir = (cuerpo, tipo, nombre, cookie = c) => fetch(`${BASE}/api/registros/${reg.id}/adjuntos`, {
+    method: 'POST', headers: { 'Content-Type': tipo, 'X-Nombre': encodeURIComponent(nombre), Cookie: cookie }, body: cuerpo });
+
+  const r = await subir(pdf, 'application/pdf', 'ORD 455 Quilpué.pdf');
+  assert.equal(r.status, 201);
+  const a = await r.json();
+  assert.equal(a.nombre, 'ORD 455 Quilpué.pdf');
+  assert.equal(a.tipo, 'application/pdf');
+  assert.equal(a.tamano, pdf.length);
+
+  // un ejecutable disfrazado de PDF se rechaza por su firma
+  assert.equal((await subir(Buffer.from('MZ\x90\x00 programa'), 'application/pdf', 'virus.pdf')).status, 415);
+  // un HTML no es un tipo permitido
+  assert.equal((await subir(Buffer.from('<script>alert(1)</script>'), 'text/html', 'x.html')).status, 415);
+  // los nombres con rutas se limpian
+  const b = await (await subir(pdf, 'application/pdf', '../../etc/passwd.pdf')).json();
+  assert.ok(!b.nombre.includes('/'));
+
+  const lista = await pedir(`/api/registros/${reg.id}/adjuntos`, { cookie: c });
+  assert.equal(lista.datos.length, 2);
+
+  const d = await fetch(`${BASE}/api/adjuntos/${a.id}`, { headers: { Cookie: c } });
+  assert.equal(d.status, 200);
+  assert.equal(d.headers.get('content-type'), 'application/pdf');
+  assert.match(d.headers.get('content-security-policy'), /sandbox/);
+  assert.match(d.headers.get('content-disposition'), /inline/);
+  assert.deepEqual(Buffer.from(await d.arrayBuffer()), pdf);
+  assert.equal((await fetch(`${BASE}/api/adjuntos/${a.id}`)).status, 401);
+
+  const h = (await pedir('/api/historial/' + reg.id, { cookie: c })).datos;
+  assert.ok(h.some(x => x.campo === 'ADJUNTO' && x.despues === 'ORD 455 Quilpué.pdf'));
+
+  const del = await fetch(`${BASE}/api/adjuntos/${a.id}`, { method: 'DELETE', headers: { Cookie: c } });
+  assert.equal(del.status, 200);
+  assert.equal((await fetch(`${BASE}/api/adjuntos/${a.id}`, { headers: { Cookie: c } })).status, 404);
+  assert.equal((await pedir(`/api/registros/${reg.id}/adjuntos`, { cookie: c })).datos.length, 1);
+});

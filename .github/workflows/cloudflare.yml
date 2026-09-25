@@ -59,4 +59,6 @@ jobs:
             ID=$(npx wrangler d1 list --json | node -e 'const l=JSON.parse(require("fs").readFileSync(0));process.stdout.write(l.find(x=>x.name==="correspondencia").uuid)')
           fi
           sed -i "s/REEMPLAZAR_CON_ID_DE_D1/$ID/" wrangler.toml
+      - name: Crear el bucket R2 de adjuntos si no existe
+        run: npx wrangler r2 bucket list | grep -q "correspondencia-adjuntos" || npx wrangler r2 bucket create correspondencia-adjuntos
       - run: npm run deploy

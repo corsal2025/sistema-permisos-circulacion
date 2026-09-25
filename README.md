@@ -14,6 +14,10 @@ Reemplaza el libro Excel `CORRESPONDENCIA` que se llevaba desde 2011.
 - **Control de conflictos**: si dos personas editan la misma ficha, la segunda recibe aviso en vez de pisar el cambio.
 - **Exportar a Excel** de la vista filtrada (funciona sin internet: Chart.js y SheetJS van incluidos en `dashboard/vendor/`).
 - **Inicio de sesión** con contraseña, roles (administrador / funcionario), administración de usuarios y bloqueo por intentos fallidos, tanto en el `.exe` local como en la nube.
+- **Documentos adjuntos y lectura automática**: arrastra el PDF o la foto del oficio a la ficha (o a cualquier parte de la pantalla).
+  En un ingreso nuevo se leen procedencia, N° y fecha del oficio, materia, patentes, monto y tipo, y se marcan en amarillo para revisar.
+  Funciona con PDF digitales (pdf.js) y con escaneos o fotos (OCR en español con Tesseract), todo dentro del navegador y sin internet.
+  Adjuntos de hasta 15 MB (PDF, imagen, Word, Excel, correo); se valida la firma del archivo y se muestran aislados.
 - **Respaldo automático diario** de la base local en `respaldos/` (se conservan los últimos 30 días).
 
 ## Arquitectura
@@ -24,9 +28,11 @@ Reemplaza el libro Excel `CORRESPONDENCIA` que se llevaba desde 2011.
 | Base de datos | SQLite (`correspondencia.db`, se crea sola) | junto al `.exe` |
 | Interfaz | HTML + JS sin framework, Chart.js, SheetJS | `dashboard/index.html` |
 | Migración inicial | Script que normaliza el Excel histórico a `data.js` | `dashboard/convertir.py` |
-| Versión nube | Cloudflare Worker + D1 + Workers Assets | `cloudflare/` |
+| Lector de oficios | Extracción de datos del texto del documento (probado con `npm test`) | `dashboard/js/leer-oficio.js` |
+| Versión nube | Cloudflare Worker + D1 + R2 (adjuntos) + Workers Assets | `cloudflare/` |
 
 API: `GET /api/registros?desde=<ts>`, `POST /api/registros`, `PUT /api/registros/{id}`, `GET /api/historial/{id}`.
+Adjuntos: `GET|POST /api/registros/{id}/adjuntos`, `GET|DELETE /api/adjuntos/{id}` (en el `.exe` se guardan en la base y entran al respaldo; en la nube, en R2).
 
 La misma `index.html` y la misma API sirven para ambas versiones (`servidor/Program.cs` y `cloudflare/src/index.js`
 aplican las mismas reglas de seguridad y validación, y las contraseñas usan el mismo formato PBKDF2).
@@ -103,4 +109,6 @@ periódico con `npx wrangler d1 export correspondencia --remote --output respald
 
 ## Pendiente
 
+- Ingreso automático desde la casilla de partes (Outlook / Microsoft 365, vía Microsoft Graph): requiere que informática registre
+  una aplicación en Entra ID con permiso de lectura solo sobre esa casilla.
 - HTTPS en el modo red del `.exe` (hoy atiende por http dentro de la red municipal; no exponerlo a internet).
