@@ -58,7 +58,7 @@ main{flex:1;overflow:auto;padding:24px}
 .kpi:hover{border-color:var(--brand2)}
 .kpi i{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;background:var(--brandbg);color:var(--brand2);flex:none}
 .kpi.w i{background:var(--warnbg);color:var(--warn)}.kpi.b i{background:var(--badbg);color:var(--bad)}
-.kpi span{color:var(--mut);font-size:13px}.kpi b{display:block;font-size:26px;font-weight:700;letter-spacing:-.5px;margin-top:2px}
+.kpi span{color:var(--mut);font-size:13px}.kpi>div{min-width:0}.kpi b{display:block;font-size:26px;white-space:nowrap;font-weight:700;letter-spacing:-.5px;margin-top:2px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden}
 .card h3{margin:0;padding:14px 18px;font-size:14px;font-weight:600;border-bottom:1px solid var(--line2);display:flex;justify-content:space-between}
@@ -275,6 +275,7 @@ dialog .fila{display:flex;gap:8px}dialog .fila .btn{width:auto;flex:1}dialog .co
 const DATA=[],POR_ID=new Map();let ultimo=-1;
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmtF=d=>d?d.split('-').reverse().join('.'):'—',clp=n=>'$'+Number(n||0).toLocaleString('es-CL'),nf=n=>n.toLocaleString('es-CL');
+const clpCorto=n=>n>=1e7?`<abbr title="${clp(n)}" style="text-decoration:none">$${(n/1e6).toLocaleString('es-CL',{maximumFractionDigits:1})} M</abbr>`:clp(n);
 const estado=r=>(r.procedimiento||'').trim()?'CERRADO':'PENDIENTE';
 const ini=s=>(s||'?').split(/\s+/).filter(Boolean).map(x=>x[0]).slice(0,2).join('');
 const TC={'TRASLADO':['#dbeafe','#1d4ed8'],'LEY 18.440':['#ede9fe','#6d28d9'],'PAGO / FONDOS':['#dcfce7','#15803d'],'BLOQUEO':['#fee2e2','#b91c1c'],'DESBLOQUEO':['#ffedd5','#c2410c'],
@@ -340,7 +341,7 @@ function panel(){
  const d=base(),pend=d.filter(r=>r.estado==='PENDIENTE');
  const k=[['i-doc','Documentos ingresados',nf(d.length),'','',''],['i-clock','Pendientes',nf(pend.length),'w','PENDIENTE',''],
   ['i-swap','Traslados',nf(d.filter(r=>r.tipo==='TRASLADO').length),'','','TRASLADO'],['i-lock','Bloqueos',nf(d.filter(r=>r.tipo==='BLOQUEO').length),'b','','BLOQUEO'],
-  ['i-money','Montos informados',clp(d.reduce((s,r)=>s+(+r.monto||0),0)),'','','PAGO / FONDOS']];
+  ['i-money','Montos informados',clpCorto(d.reduce((s,r)=>s+(+r.monto||0),0)),'','','PAGO / FONDOS']];
  $('#kpis').innerHTML=k.map(([i,t,v,c,e,ti])=>`<div class="kpi ${c}" onclick="filtrar('${esc(e)}','${esc(ti)}')"><i><svg><use href="#${i}"/></svg></i><div><span>${t}</span><b>${v}</b></div></div>`).join('');
  const m=Array(12).fill(0);d.forEach(r=>{const x=+r.fecha?.slice(5,7);if(x)m[x-1]++});$('#sMes').textContent=$('#anio').value||'todos los años';
  chart('cMes',{type:'bar',data:{labels:['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'],datasets:[{data:m,backgroundColor:'#157347',borderRadius:5,maxBarThickness:34}]},options:{scales:{x:{grid:{display:false}}}}});

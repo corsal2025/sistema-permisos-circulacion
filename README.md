@@ -13,7 +13,8 @@ Reemplaza el libro Excel `CORRESPONDENCIA` que se llevaba desde 2011.
 - **Multiusuario**: cada cambio queda registrado con usuario, fecha, valor anterior y nuevo.
 - **Control de conflictos**: si dos personas editan la misma ficha, la segunda recibe aviso en vez de pisar el cambio.
 - **Exportar a Excel** de la vista filtrada (funciona sin internet: Chart.js y SheetJS van incluidos en `dashboard/vendor/`).
-- **Versión en la nube** (Cloudflare): inicio de sesión con contraseña, roles, administración de usuarios y bloqueo por intentos fallidos.
+- **Inicio de sesión** con contraseña, roles (administrador / funcionario), administración de usuarios y bloqueo por intentos fallidos, tanto en el `.exe` local como en la nube.
+- **Respaldo automático diario** de la base local en `respaldos/` (se conservan los últimos 30 días).
 
 ## Arquitectura
 
@@ -27,16 +28,19 @@ Reemplaza el libro Excel `CORRESPONDENCIA` que se llevaba desde 2011.
 
 API: `GET /api/registros?desde=<ts>`, `POST /api/registros`, `PUT /api/registros/{id}`, `GET /api/historial/{id}`.
 
-La misma `index.html` sirve para ambas versiones: si el servidor responde `/api/yo` (nube) pide usuario y contraseña;
-si no (servidor `.exe`), funciona como antes pidiendo solo el nombre.
+La misma `index.html` y la misma API sirven para ambas versiones (`servidor/Program.cs` y `cloudflare/src/index.js`
+aplican las mismas reglas de seguridad y validación, y las contraseñas usan el mismo formato PBKDF2).
 
 ## Uso local (Windows, sin internet)
 
 1. Ejecutar `PUBLICAR.bat` (compila y arma la carpeta `SISTEMA/`).
-2. Abrir `SISTEMA/INICIAR.bat` → se abre `http://localhost:8765`.
+2. Abrir `SISTEMA/INICIAR.bat`. **La primera vez** pide crear la cuenta de administrador en la consola; luego se abre `http://localhost:8765`.
+   Los demás usuarios se crean desde el sistema (clic en tu nombre → *Administrar usuarios*), o por consola:
+   `CorrespondenciaPC.exe --crear-usuario rosa "ROSA PEREZ" funcionario`.
 3. Para varios usuarios: `SISTEMA/INICIAR EN RED.bat` y compartir `http://IP-DEL-PC:8765`.
 
-Respaldar periódicamente `SISTEMA/correspondencia.db`.
+El sistema deja una copia diaria en `SISTEMA/respaldos/`; igual conviene copiar esa carpeta a otro equipo o unidad.
+Otras opciones: `--datos <carpeta>` (dónde guardar la base y los respaldos) y `--puerto <n>`.
 
 ## Versión Cloudflare (`cloudflare/`)
 
@@ -80,8 +84,14 @@ limitado a los correos municipales, como segunda capa antes del login.
 
 ### Pruebas
 
-`cd cloudflare && npm test` levanta el Worker con una D1 local temporal y prueba login, bloqueo, correlativo,
-historial, conflictos, permisos de administrador y CSRF (no requiere cuenta de Cloudflare).
+Los mismos casos (login, bloqueo, correlativo, historial, conflictos, permisos de administrador, CSRF y cabeceras)
+se corren contra los dos servidores:
+
+```bash
+cd cloudflare
+npm test              # Worker con una D1 local temporal (no requiere cuenta de Cloudflare)
+npm run test:dotnet   # servidor .exe (requiere .NET 10 SDK)
+```
 
 ## Datos
 
@@ -93,4 +103,4 @@ periódico con `npx wrangler d1 export correspondencia --remote --output respald
 
 ## Pendiente
 
-- Inicio de sesión en la versión `.exe` local (la versión nube ya lo tiene): mientras tanto, no usar `INICIAR EN RED.bat` fuera de la red municipal.
+- HTTPS en el modo red del `.exe` (hoy atiende por http dentro de la red municipal; no exponerlo a internet).

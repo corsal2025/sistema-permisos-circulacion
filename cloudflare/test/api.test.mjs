@@ -1,35 +1,54 @@
-// Prueba de punta a punta: levanta el Worker con `wrangler dev` sobre una D1 local temporal.
-// Uso: npm test   (no requiere cuenta de Cloudflare)
+// Prueba de punta a punta de la API. Los mismos casos validan los dos servidores:
+//   npm test               -> Worker de Cloudflare con `wrangler dev` y una D1 local temporal (sin cuenta)
+//   npm run test:dotnet    -> servidor .exe (servidor/Program.cs) con una carpeta de datos temporal
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, copyFileSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 process.env.WRANGLER_SEND_METRICS = 'false';
-const PUERTO = 8799, BASE = `http://127.0.0.1:${PUERTO}`;
-const estado = mkdtempSync(join(tmpdir(), 'd1-prueba-'));
-const w = (...a) => execFileSync('npx', ['wrangler', ...a, '--persist-to', estado], { stdio: 'pipe' });
+const DOTNET = process.env.SERVIDOR === 'dotnet';
+const PUERTO = DOTNET ? 8797 : 8799, BASE = `http://127.0.0.1:${PUERTO}`;
+const RAIZ = fileURLToPath(new URL('../../', import.meta.url));
+const estado = mkdtempSync(join(tmpdir(), 'correspondencia-prueba-'));
+const CLAVE = 'clave-segura-123';
 let servidor;
 
-before(async () => {
+function prepararWorker() {
+  const w = (...a) => execFileSync('npx', ['wrangler', ...a, '--persist-to', estado], { stdio: 'pipe' });
   execFileSync('node', ['scripts/build.mjs']);
   w('d1', 'migrations', 'apply', 'correspondencia', '--local');
-  const sql = (u, n, rol) => {
-    // mismo algoritmo que scripts/crear-usuario.mjs
-    return execFileSync('node', ['-e', `
-      const c=require('crypto');const s=c.randomBytes(16).toString('hex');
-      const h=c.pbkdf2Sync('clave-segura-123',Buffer.from(s,'hex'),100000,32,'sha256').toString('hex');
-      process.stdout.write("INSERT INTO usuarios(usuario,nombre,hash,sal,rol) VALUES('${u}','${n}','"+h+"','"+s+"','${rol}')")`]).toString();
-  };
+  const sql = (u, n, rol) => execFileSync('node', ['-e', `
+    const c=require('crypto');const s=c.randomBytes(16).toString('hex');
+    const h=c.pbkdf2Sync('${CLAVE}',Buffer.from(s,'hex'),100000,32,'sha256').toString('hex');
+    process.stdout.write("INSERT INTO usuarios(usuario,nombre,hash,sal,rol) VALUES('${u}','${n}','"+h+"','"+s+"','${rol}')")`]).toString();
   w('d1', 'execute', 'correspondencia', '--local', '--command', sql('admin', 'ADMIN PRUEBA', 'admin'));
   w('d1', 'execute', 'correspondencia', '--local', '--command', sql('ana', 'ANA PRUEBA', 'funcionario'));
-  servidor = spawn('npx', ['wrangler', 'dev', '--port', String(PUERTO), '--ip', '127.0.0.1', '--persist-to', estado], { stdio: 'ignore', detached: true });
-  for (let i = 0; i < 60; i++) {
+  return spawn('npx', ['wrangler', 'dev', '--port', String(PUERTO), '--ip', '127.0.0.1', '--persist-to', estado], { stdio: 'ignore', detached: true });
+}
+
+function prepararDotnet() {
+  const salida = join(estado, 'bin');
+  execFileSync('dotnet', ['build', join(RAIZ, 'servidor/Servidor.csproj'), '-c', 'Release', '-o', salida], { stdio: 'pipe' });
+  mkdirSync(join(salida, 'web'));
+  copyFileSync(join(RAIZ, 'dashboard/index.html'), join(salida, 'web/index.html'));
+  cpSync(join(RAIZ, 'dashboard/vendor'), join(salida, 'web/vendor'), { recursive: true });
+  const datos = join(estado, 'datos');
+  const exe = (...a) => execFileSync('dotnet', [join(salida, 'CorrespondenciaPC.dll'), '--datos', datos, ...a], { stdio: 'pipe', env: { ...process.env, CLAVE } });
+  exe('--crear-usuario', 'admin', 'Admin Prueba', 'admin');
+  exe('--crear-usuario', 'ana', 'Ana Prueba', 'funcionario');
+  return spawn('dotnet', [join(salida, 'CorrespondenciaPC.dll'), '--datos', datos, '--puerto', String(PUERTO), '--sin-navegador'], { stdio: 'ignore', detached: true });
+}
+
+before(async () => {
+  servidor = DOTNET ? prepararDotnet() : prepararWorker();
+  for (let i = 0; i < 90; i++) {
     try { await fetch(BASE + '/'); return; } catch { await new Promise(r => setTimeout(r, 500)); }
   }
-  throw new Error('wrangler dev no arrancó');
+  throw new Error('el servidor no arrancó');
 });
 after(() => { try { process.kill(-servidor.pid); } catch {} rmSync(estado, { recursive: true, force: true }); });
 
@@ -42,7 +61,7 @@ async function pedir(ruta, { metodo = 'GET', cuerpo, cookie, headers = {} } = {}
   let datos = null; try { datos = await r.json(); } catch {}
   return { status: r.status, datos, cookie: (r.headers.get('set-cookie') || '').split(';')[0] };
 }
-const entrar = async (usuario, clave = 'clave-segura-123') => (await pedir('/api/login', { metodo: 'POST', cuerpo: { usuario, clave } })).cookie;
+const entrar = async (usuario, clave = CLAVE) => (await pedir('/api/login', { metodo: 'POST', cuerpo: { usuario, clave } })).cookie;
 
 test('la interfaz es pública pero la API exige sesión', async () => {
   assert.equal((await fetch(BASE + '/')).status, 200);
@@ -138,4 +157,17 @@ test('bloqueo tras 5 intentos fallidos', async () => {
   for (let i = 0; i < 5; i++) await pedir('/api/login', { metodo: 'POST', cuerpo: { usuario: 'admin', clave: 'mala' } });
   const r = await pedir('/api/login', { metodo: 'POST', cuerpo: { usuario: 'admin', clave: 'clave-segura-123' } });
   assert.equal(r.status, 429);
+});
+
+test('rutas desconocidas de la API responden 404 en JSON', async () => {
+  const c = await entrar('ana', 'nueva-clave-789'); // contraseña cambiada en la prueba anterior
+  const r = await pedir('/api/no-existe', { cookie: c });
+  assert.equal(r.status, 404);
+  assert.ok(r.datos.error);
+});
+
+test('cabeceras de seguridad en la interfaz', async () => {
+  const r = await fetch(BASE + '/');
+  assert.equal(r.headers.get('x-frame-options'), 'DENY');
+  assert.match(r.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
 });
