@@ -37,6 +37,24 @@ Adjuntos: `GET|POST /api/registros/{id}/adjuntos`, `GET|DELETE /api/adjuntos/{id
 La misma `index.html` y la misma API sirven para ambas versiones (`servidor/Program.cs` y `cloudflare/src/index.js`
 aplican las mismas reglas de seguridad y validación, y las contraseñas usan el mismo formato PBKDF2).
 
+## Probarlo con datos ficticios
+
+**En la nube, sin instalar nada (GitHub Codespaces):** en GitHub, botón **Code → Codespaces → Create codespace on**
+esta rama. Se abre VS Code en el navegador, se instala todo solo y arranca la demo; se abre una pestaña con el sistema
+(si no, pestaña **PORTS** → globo del puerto 8765). Usuario `demo`, contraseña `demo-demo-123`.
+El link del puerto es privado: solo lo abre quien tenga acceso al repositorio en GitHub.
+
+**En tu PC con VS Code:** instalar [.NET 10 SDK](https://dotnet.microsoft.com/download) y [Node.js 22](https://nodejs.org),
+clonar el repositorio, abrir la carpeta y ejecutar la tarea **Sistema: iniciar demo** (Ctrl+Shift+B), o en la terminal:
+
+```bash
+node scripts/demo.mjs            # abre en http://localhost:8765
+node scripts/demo.mjs --reiniciar   # vuelve a crear los datos de demo
+```
+
+La demo vive en `.demo/` (no se sube a git) y solo publica la interfaz, nunca `data.js` ni el Excel.
+El diagrama de cómo funciona el sistema está en `docs/mapa-sistema.html` (se abre directo en el navegador).
+
 ## Uso local (Windows, sin internet)
 
 1. Ejecutar `PUBLICAR.bat` (compila y arma la carpeta `SISTEMA/`).

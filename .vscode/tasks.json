@@ -1,0 +1,10 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "Sistema: iniciar demo", "type": "shell", "command": "node scripts/demo.mjs", "isBackground": true, "problemMatcher": [], "group": { "kind": "build", "isDefault": true } },
+    { "label": "Sistema: demo desde cero", "type": "shell", "command": "node scripts/demo.mjs --reiniciar", "isBackground": true, "problemMatcher": [] },
+    { "label": "Pruebas: servidor local (.exe)", "type": "shell", "command": "npm run test:dotnet", "options": { "cwd": "${workspaceFolder}/cloudflare" }, "problemMatcher": [], "group": "test" },
+    { "label": "Pruebas: versión nube (Worker)", "type": "shell", "command": "npm test", "options": { "cwd": "${workspaceFolder}/cloudflare" }, "problemMatcher": [], "group": "test" },
+    { "label": "Nube: probar en local (wrangler dev)", "type": "shell", "command": "npm run dev", "options": { "cwd": "${workspaceFolder}/cloudflare" }, "isBackground": true, "problemMatcher": [] }
+  ]
+}

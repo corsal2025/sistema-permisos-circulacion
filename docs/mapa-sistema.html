@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<title>Mapa del Sistema de Correspondencia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f2f5f3; --panel:#ffffff; --ink:#122019; --ink2:#3d4d44; --mut:#6a7a71; --line:#d7e0da; --line2:#e8eee9;
+  --brand:#0f5132; --brand2:#157347; --brandbg:#e3f1e8;
+  --nube:#1d4ed8; --nubebg:#e4ebfd;
+  --pend:#b45309; --pendbg:#fdf0dc;
+  --dato:#7c3aed; --datobg:#efe8fd;
+  --edge:#b9c6be; --focus:#157347;
+  --shadow:0 1px 2px rgba(15,40,25,.06),0 6px 18px rgba(15,40,25,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0e1612; --panel:#15201a; --ink:#e4ede7; --ink2:#bccbc2; --mut:#8fa197; --line:#2a3a31; --line2:#1d2a23;
+    --brand:#7fd1a2; --brand2:#4cbf7f; --brandbg:#173524;
+    --nube:#8fb0ff; --nubebg:#1a2848;
+    --pend:#f3b562; --pendbg:#3a2a12;
+    --dato:#c4a5ff; --datobg:#2c2046;
+    --edge:#3c5045; --focus:#4cbf7f;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0e1612; --panel:#15201a; --ink:#e4ede7; --ink2:#bccbc2; --mut:#8fa197; --line:#2a3a31; --line2:#1d2a23;
+  --brand:#7fd1a2; --brand2:#4cbf7f; --brandbg:#173524;
+  --nube:#8fb0ff; --nubebg:#1a2848;
+  --pend:#f3b562; --pendbg:#3a2a12;
+  --dato:#c4a5ff; --datobg:#2c2046;
+  --edge:#3c5045; --focus:#4cbf7f;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 "Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;margin:0}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:20px;padding-block:28px 48px;display:grid;gap:22px}
+h1,h2,h3{font-family:Archivo,"Source Sans 3",system-ui,sans-serif;text-wrap:balance;margin:0;color:var(--ink)}
+h1{font-size:clamp(26px,3.4vw,36px);font-weight:800;letter-spacing:-.02em}
+h2{font-size:18px;font-weight:700}
+h3{font-size:15px;font-weight:700}
+.eyebrow{font:600 12px/1.2 "Source Sans 3",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--brand2)}
+.lead{color:var(--ink2);max-width:68ch;margin:6px 0 0}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;font-size:.86em}
+code{background:var(--line2);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+
+.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:14px}
+.leyenda{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px;color:var(--ink2)}
+.leyenda span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:14px;border-radius:4px;border:2px solid;display:inline-block}
+.sw.ok{border-color:var(--brand2);background:var(--brandbg)}
+.sw.nube{border-color:var(--nube);background:var(--nubebg)}
+.sw.pend{border-color:var(--pend);background:var(--pendbg);border-style:dashed}
+
+.recorridos{display:flex;flex-wrap:wrap;gap:8px}
+.recorridos button{font:600 14px/1.2 "Source Sans 3",sans-serif;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:8px 14px;cursor:pointer;transition:border-color .15s,background .15s}
+.recorridos button:hover{border-color:var(--brand2)}
+.recorridos button[aria-pressed="true"]{background:var(--brand2);border-color:var(--brand2);color:#fff}
+:root[data-theme="dark"] .recorridos button[aria-pressed="true"]{color:#0e1612}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .recorridos button[aria-pressed="true"]{color:#0e1612}}
+button:focus-visible,.nodo:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+.cuerpo{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
+@media (max-width:980px){.cuerpo{grid-template-columns:1fr}.lienzo{position:static}}
+.lienzo{position:sticky;top:calc(12px + env(safe-area-inset-top,0px));background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow-x:auto}
+.lienzo svg{display:block;width:100%;min-width:760px;height:auto}
+.col-tit{font:700 12px Archivo,sans-serif;letter-spacing:.12em;text-transform:uppercase;fill:var(--mut)}
+.col-fondo{fill:var(--line2)}
+
+.arista{fill:none;stroke:var(--edge);stroke-width:2;transition:stroke .25s,stroke-width .25s,opacity .25s}
+.arista.pend{stroke-dasharray:6 5}
+.arista.on{stroke:var(--brand2);stroke-width:3.5}
+.arista.on.nube{stroke:var(--nube)}
+.arista.on.pend{stroke:var(--pend)}
+.arista.flujo{stroke-dasharray:8 8;animation:fluir 1s linear infinite}
+@keyframes fluir{to{stroke-dashoffset:-16}}
+.apagado .arista:not(.on){opacity:.25}
+.apagado .nodo:not(.on){opacity:.35}
+
+.nodo{cursor:pointer;transition:opacity .25s}
+.nodo rect{fill:var(--panel);stroke:var(--brand2);stroke-width:2;transition:stroke-width .2s,fill .2s}
+.nodo.nube rect{stroke:var(--nube)}
+.nodo.pend rect{stroke:var(--pend);stroke-dasharray:7 5;fill:var(--pendbg)}
+.nodo .t{font:700 15px Archivo,sans-serif;fill:var(--ink)}
+.nodo .s{font:400 12.5px "Source Sans 3",sans-serif;fill:var(--mut)}
+.nodo .chip{font:600 10.5px "Source Sans 3",sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.nodo:hover rect{stroke-width:3}
+.nodo.on rect{fill:var(--brandbg);stroke-width:3.5}
+.nodo.nube.on rect{fill:var(--nubebg)}
+.nodo.pend.on rect{fill:var(--pendbg)}
+.nodo.sel rect{stroke-width:4}
+.num{font:800 13px Archivo,sans-serif;fill:#fff}
+.num-c{fill:var(--brand2)}
+
+.lado{display:grid;gap:14px}
+.tarjeta{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow);display:grid;gap:10px}
+.pasos{display:grid;gap:8px;margin:0;padding:0;list-style:none;counter-reset:p}
+.pasos li{display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:start;padding:8px;border-radius:10px;cursor:pointer;color:var(--ink2);font-size:14.5px}
+.pasos li::before{counter-increment:p;content:counter(p);width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:800 12px Archivo,sans-serif;background:var(--line2);color:var(--mut)}
+.pasos li.act{background:var(--brandbg);color:var(--ink)}
+.pasos li.act::before{background:var(--brand2);color:#fff}
+.pasos li.hecho::before{background:var(--brand2);color:#fff;opacity:.55}
+.controles{display:flex;gap:8px;flex-wrap:wrap}
+.btn{font:600 14px "Source Sans 3",sans-serif;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:8px 12px;cursor:pointer}
+.btn:hover{border-color:var(--brand2)}
+.btn.pri{background:var(--brand2);border-color:var(--brand2);color:#fff}
+.btn:disabled{opacity:.45;cursor:default}
+.estado{display:inline-flex;align-items:center;gap:6px;font:600 12px "Source Sans 3",sans-serif;padding:3px 9px;border-radius:999px;width:fit-content}
+.estado.ok{background:var(--brandbg);color:var(--brand)}
+.estado.nube{background:var(--nubebg);color:var(--nube)}
+.estado.pend{background:var(--pendbg);color:var(--pend)}
+.det p{margin:0;color:var(--ink2);font-size:14.5px}
+.det dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13.5px}
+.det dt{color:var(--mut)}
+.det dd{margin:0;overflow-wrap:anywhere}
+.vacio{color:var(--mut);font-size:14px}
+
+.herr{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:12px}
+.herr .h{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:4px}
+.herr .h b{font-family:Archivo,sans-serif}
+.herr .h span{color:var(--ink2);font-size:14px}
+.pie{color:var(--mut);font-size:13px}
+@media (prefers-reduced-motion:reduce){.arista.flujo{animation:none}.nodo,.arista{transition:none}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Dirección de Tránsito · Permisos de circulación</div>
+      <h1>Mapa del Sistema de Correspondencia</h1>
+      <p class="lead">Cómo viaja un documento desde que llega hasta que queda archivado y respaldado. Elige un recorrido para verlo paso a paso, o toca cualquier pieza para ver qué hace.</p>
+    </div>
+    <div class="leyenda" aria-label="Leyenda">
+      <span><i class="sw ok"></i>Funciona hoy (local)</span>
+      <span><i class="sw nube"></i>Versión nube, lista sin desplegar</span>
+      <span><i class="sw pend"></i>Pendiente de información</span>
+    </div>
+  </header>
+
+  <nav class="recorridos" id="recorridos" aria-label="Recorridos"></nav>
+
+  <div class="cuerpo">
+    <div class="lienzo" id="lienzo">
+      <svg id="svg" viewBox="0 0 1000 660" role="img" aria-labelledby="svgT">
+        <title id="svgT">Diagrama de piezas del sistema y sus conexiones</title>
+        <g id="columnas"></g><g id="aristas"></g><g id="nodos"></g><g id="numeros"></g>
+      </svg>
+    </div>
+    <aside class="lado">
+      <section class="tarjeta" id="panelRec" aria-live="polite"></section>
+      <section class="tarjeta det" id="panelDet" aria-live="polite"></section>
+    </aside>
+  </div>
+
+  <section style="display:grid;gap:12px">
+    <h2>Herramientas que usa hoy</h2>
+    <div class="herr" id="herr"></div>
+  </section>
+  <p class="pie">Estado al 25.09.2026 · rama <code>claude/modest-faraday-puy0r9</code> · 20 de 20 pruebas automáticas en verde en ambos servidores.</p>
+</div>
+
+<script>
+// ---------- piezas ----------
+const W=270,H=78;
+const N={
+  persona:{x:20,y:56,t:'Funcionario/a',s:'Registra, revisa y responde',k:'ok',
+    que:'Quien usa el sistema. Entra con su propio usuario y contraseña; su nombre queda en cada cambio del historial.',donde:'Cualquier navegador de la red municipal',est:'Listo'},
+  oficio:{x:20,y:176,t:'Oficio recibido',s:'Papel escaneado, foto o PDF',k:'ok',
+    que:'El documento que llega. Se arrastra a la ficha o a cualquier parte de la pantalla.',donde:'Escáner, correo o carpeta del PC',est:'Listo'},
+  lector:{x:20,y:296,t:'Lector de oficios',s:'pdf.js + OCR en español',k:'ok',
+    que:'Saca el texto del PDF (o reconoce la imagen con OCR) y detecta procedencia, N° y fecha del oficio, materia, patentes, monto y tipo. Funciona sin internet, dentro del navegador.',donde:'dashboard/js/leer-oficio.js · vendor/pdfjs · vendor/tesseract',est:'Listo · 7 pruebas'},
+  interfaz:{x:20,y:416,t:'Interfaz web',s:'Panel, tabla, ficha, patente',k:'ok',
+    que:'La pantalla del sistema: panel con indicadores y gráficos, tabla con filtros, pendientes, ficha con historial y documentos, búsqueda por patente, exportar a Excel y administración de usuarios.',donde:'dashboard/index.html · Chart.js · SheetJS',est:'Listo'},
+  exe:{x:365,y:116,t:'Servidor local',s:'CorrespondenciaPC.exe · .NET 10',k:'ok',
+    que:'Un solo programa para Windows, sin instalar nada. Atiende en http://localhost:8765, o en la red con INICIAR EN RED.bat. Asigna el N° correlativo y guarda cada cambio.',donde:'servidor/Program.cs · PUBLICAR.bat',est:'Listo'},
+  seguridad:{x:365,y:256,t:'Control de acceso',s:'Login, roles, validación',k:'ok',
+    que:'Contraseñas cifradas (PBKDF2), sesión de 12 horas, bloqueo de 15 minutos tras 5 intentos, rol administrador o funcionario, rechazo de datos mal formados y de pedidos de otros sitios. Aplica igual en el servidor local y en la nube.',donde:'servidor/Program.cs · cloudflare/src/index.js',est:'Listo · probado en ambos'},
+  worker:{x:365,y:396,t:'Versión nube',s:'Cloudflare Worker',k:'nube',
+    que:'La misma API y las mismas reglas, pero en Cloudflare, para entrar desde cualquier lugar. Está lista y probada, pero no se ha desplegado.',donde:'cloudflare/ · wrangler.toml',est:'Lista, sin desplegar'},
+  outlook:{x:365,y:546,t:'Correo Outlook',s:'Bandeja "Por ingresar"',k:'pend',
+    que:'Próximo paso: cada correo que llegue a la casilla de partes aparecerá como ingreso por revisar, con sus adjuntos ya leídos por el lector de oficios.',donde:'Microsoft 365 vía Microsoft Graph',est:'Falta: app en Entra ID (informática)'},
+  sqlite:{x:710,y:56,t:'Base de datos local',s:'correspondencia.db (SQLite)',k:'ok',
+    que:'Guarda ingresos, historial de cambios, usuarios, sesiones y documentos adjuntos, en un solo archivo junto al .exe.',donde:'SISTEMA/correspondencia.db',est:'Listo'},
+  respaldo:{x:710,y:176,t:'Respaldo diario',s:'Últimos 30 días',k:'ok',
+    que:'Cada día se crea una copia completa de la base, con los adjuntos incluidos. Se conservan las últimas 30.',donde:'SISTEMA/respaldos/',est:'Listo · falta copiar fuera del PC'},
+  historico:{x:710,y:296,t:'Histórico Excel',s:'CORRESPONDENCIA desde 2011',k:'ok',
+    que:'El libro Excel anterior se convierte con convertir.py a data.js y se importa solo en el primer inicio. Unifica columnas, fechas, tipos y patentes.',donde:'dashboard/convertir.py → data.js',est:'Listo'},
+  d1r2:{x:710,y:416,t:'Datos en la nube',s:'D1 (registros) + R2 (archivos)',k:'nube',
+    que:'Base de datos y almacenamiento de archivos de Cloudflare para la versión nube. Se crean solos al desplegar.',donde:'cloudflare/migrations · wrangler.toml',est:'Listo, sin desplegar'},
+  ci:{x:710,y:546,t:'Pruebas y despliegue',s:'GitHub Actions',k:'nube',
+    que:'En cada cambio se corren las pruebas automáticas y se compila el servidor. Al fusionar a main, publica en Cloudflare si están configurados los secrets.',donde:'.github/workflows/',est:'Listo · faltan secrets'},
+};
+const E=[
+  ['persona','interfaz','ok'],['oficio','lector','ok'],['lector','interfaz','ok'],
+  ['interfaz','exe','ok'],['interfaz','worker','nube'],['exe','seguridad','ok'],['worker','seguridad','nube'],
+  ['exe','sqlite','ok'],['sqlite','respaldo','ok'],['historico','sqlite','ok'],['historico','d1r2','nube'],
+  ['worker','d1r2','nube'],['ci','worker','nube'],['outlook','exe','pend'],['outlook','lector','pend'],
+];
+const ID=(a,b)=>a+'-'+b;
+
+// ---------- recorridos ----------
+const R=[
+ {id:'papel',t:'Registrar un oficio en papel',pasos:[
+  {n:['oficio'],e:[],d:'Llega el oficio. Se escanea o se le saca una foto, y se arrastra a la pantalla.'},
+  {n:['oficio','lector'],e:['oficio-lector'],d:'El lector saca el texto: si el PDF trae texto lo lee directo (0,2 s); si es una imagen, usa OCR (unos 2 s).'},
+  {n:['lector','interfaz'],e:['lector-interfaz'],d:'La ficha se completa sola: procedencia, N° y fecha del oficio, materia, patentes, monto y tipo. Esos campos quedan en amarillo.'},
+  {n:['persona','interfaz'],e:['persona-interfaz'],d:'La persona revisa lo marcado, corrige si hace falta, asigna a quién va y guarda.'},
+  {n:['interfaz','exe','seguridad'],e:['interfaz-exe','exe-seguridad'],d:'El servidor comprueba la sesión y valida los datos. Si falta la materia o la fecha es inválida, responde con el error.'},
+  {n:['exe','sqlite'],e:['exe-sqlite'],d:'Asigna el N° correlativo del año y guarda el ingreso y su historial juntos. Dos personas nunca reciben el mismo número.'},
+  {n:['exe','sqlite'],e:['exe-sqlite'],d:'Sube el documento y lo deja pegado a la ficha. Se revisa que sea un PDF o imagen real y no un programa disfrazado.'},
+  {n:['sqlite','respaldo'],e:['sqlite-respaldo'],d:'Esa noche entra en el respaldo diario, con el documento incluido.'},
+ ]},
+ {id:'editar',t:'Editar una ficha a la vez que otra persona',pasos:[
+  {n:['persona','interfaz'],e:['persona-interfaz'],d:'Dos personas abren la misma ficha.'},
+  {n:['interfaz','exe','sqlite'],e:['interfaz-exe','exe-sqlite'],d:'La primera guarda su cambio. Queda en el historial con su nombre, el valor anterior y el nuevo.'},
+  {n:['interfaz','exe'],e:['interfaz-exe'],d:'La segunda intenta guardar. El servidor ve que la ficha cambió desde que la abrió y no pisa el cambio anterior.'},
+  {n:['interfaz','persona'],e:['persona-interfaz'],d:'A la segunda le aparece un aviso; lo que escribió se conserva en pantalla. Revisa el historial y vuelve a guardar.'},
+ ]},
+ {id:'sync',t:'Ver los cambios de los demás',pasos:[
+  {n:['interfaz','exe'],e:['interfaz-exe'],d:'Cada 15 segundos la pantalla le pregunta al servidor qué cambió desde la última vez.'},
+  {n:['exe','sqlite'],e:['exe-sqlite'],d:'El servidor devuelve solo los ingresos nuevos o modificados, no todo el libro.'},
+  {n:['interfaz','persona'],e:['persona-interfaz'],d:'Indicadores, pendientes y tabla se actualizan solos. Abajo a la izquierda se ve "Conectado".'},
+ ]},
+ {id:'patente',t:'Buscar una patente',pasos:[
+  {n:['persona','interfaz'],e:['persona-interfaz'],d:'Se escriben 4 o más caracteres de la patente, por ejemplo KJPB54.'},
+  {n:['interfaz'],e:[],d:'La búsqueda ocurre en la misma pantalla, sin esperar al servidor: muestra todos los movimientos desde 2011 y si la patente está bloqueada.'},
+ ]},
+ {id:'login',t:'Iniciar sesión y administrar usuarios',pasos:[
+  {n:['persona','interfaz'],e:['persona-interfaz'],d:'Se entra con usuario y contraseña. El primer administrador se crea en la consola la primera vez que se abre el sistema.'},
+  {n:['interfaz','exe','seguridad'],e:['interfaz-exe','exe-seguridad'],d:'Se comprueba la contraseña cifrada. Tras 5 intentos fallidos la cuenta se bloquea 15 minutos.'},
+  {n:['seguridad','sqlite'],e:['exe-sqlite'],d:'Se abre una sesión de 12 horas. El administrador crea usuarios, cambia roles o desactiva cuentas desde la pantalla.'},
+ ]},
+ {id:'inicio',t:'Primer inicio y respaldo',pasos:[
+  {n:['historico'],e:[],d:'El Excel histórico se convierte con convertir.py en data.js.'},
+  {n:['historico','sqlite'],e:['historico-sqlite'],d:'Al abrir INICIAR.bat por primera vez, se crea la base y se importan todos los registros desde 2011.'},
+  {n:['exe','sqlite'],e:['exe-sqlite'],d:'La consola pide crear el administrador. Luego se abre el navegador en http://localhost:8765.'},
+  {n:['sqlite','respaldo'],e:['sqlite-respaldo'],d:'Cada día se crea un respaldo en SISTEMA/respaldos y se borran los de más de 30 días.'},
+ ]},
+ {id:'nube',t:'Versión nube (sin desplegar)',pasos:[
+  {n:['ci'],e:[],d:'En cada cambio subido a GitHub se corren las pruebas automáticas.'},
+  {n:['ci','worker'],e:['ci-worker'],d:'Al fusionar a main, y si están los secrets de Cloudflare, se publica la versión nube.'},
+  {n:['worker','d1r2','historico'],e:['worker-d1r2','historico-d1r2'],d:'Se crean la base D1 y el almacenamiento R2. El histórico o la base local se importan con npm run importar.'},
+  {n:['interfaz','worker','seguridad'],e:['interfaz-worker','worker-seguridad'],d:'La misma pantalla y las mismas reglas, desde cualquier lugar. Antes hay que confirmar con protección de datos (Ley 19.628).'},
+ ]},
+ {id:'outlook',t:'Correo Outlook (próximo)',pasos:[
+  {n:['outlook'],e:[],d:'Llega un correo a la casilla de partes (Microsoft 365).'},
+  {n:['outlook','exe'],e:['outlook-exe'],d:'El sistema lo toma con Microsoft Graph y crea un ingreso en una bandeja "Por ingresar".'},
+  {n:['outlook','lector'],e:['outlook-lector'],d:'Los adjuntos pasan por el mismo lector de oficios. La persona solo revisa y confirma.'},
+ ]},
+];
+
+// ---------- dibujo ----------
+const svg=document.getElementById('svg'),NS='http://www.w3.org/2000/svg';
+const el=(t,a={},p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e};
+const cols=[[20,'Personas y pantalla'],[365,'Servidor'],[710,'Datos y operación']];
+cols.forEach(([x,t])=>{el('rect',{x:x-10,y:14,width:W+20,height:632,rx:14,class:'col-fondo'},document.getElementById('columnas'));
+  el('text',{x:x+4,y:40,class:'col-tit'},document.getElementById('columnas')).textContent=t});
+
+function ancla(a,b){const A=N[a],B=N[b];
+  if(A.x===B.x){const abajo=B.y>A.y;return [[A.x+W/2,abajo?A.y+H:A.y],[B.x+W/2,abajo?B.y:B.y+H],'v']}
+  const der=B.x>A.x;return [[der?A.x+W:A.x,A.y+H/2],[der?B.x:B.x+W,B.y+H/2],'h']}
+const gA=document.getElementById('aristas');
+E.forEach(([a,b,k])=>{const [[x1,y1],[x2,y2],o]=ancla(a,b);
+  let d;if(o==='h'){const m=(x1+x2)/2;d=`M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}`}
+  else if(a==='outlook'&&b==='lector'){d=`M${N.outlook.x},${N.outlook.y+H/2} C${N.outlook.x-60},${N.outlook.y+H/2} ${N.lector.x+W+40},${N.lector.y+H} ${N.lector.x+W},${N.lector.y+H*0.8}`}
+  else d=`M${x1},${y1} L${x2},${y2}`;
+  if(a==='outlook'&&b==='exe')d=`M${N.outlook.x+W},${N.outlook.y+H/2} C${N.outlook.x+W+50},${N.outlook.y+H/2} ${N.exe.x+W+50},${N.exe.y+H/2} ${N.exe.x+W},${N.exe.y+H*0.7}`;
+  el('path',{d,id:'e-'+ID(a,b),class:'arista '+(k==='ok'?'':k)},gA)});
+
+const gN=document.getElementById('nodos'),chip={ok:['Funciona','var(--brand)'],nube:['Nube','var(--nube)'],pend:['Pendiente','var(--pend)']};
+Object.entries(N).forEach(([id,n])=>{const g=el('g',{class:'nodo '+(n.k==='ok'?'':n.k),id:'n-'+id,tabindex:0,role:'button','aria-label':n.t+': '+n.s},gN);
+  el('rect',{x:n.x,y:n.y,width:W,height:H,rx:12},g);
+  el('text',{x:n.x+16,y:n.y+30,class:'t'},g).textContent=n.t;
+  el('text',{x:n.x+16,y:n.y+52,class:'s'},g).textContent=n.s;
+  const c=el('text',{x:n.x+W-14,y:n.y+22,'text-anchor':'end',class:'chip',fill:chip[n.k][1]},g);c.textContent=chip[n.k][0];
+  g.addEventListener('click',()=>detalle(id));
+  g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();detalle(id)}})});
+
+// ---------- estado ----------
+let rec=null,paso=0,sel=null;
+const $=s=>document.querySelector(s);
+function pintar(){
+  const p=rec?rec.pasos[paso]:null;
+  svg.classList.toggle('apagado',!!p);
+  document.querySelectorAll('.nodo').forEach(g=>g.classList.toggle('on',!!p&&p.n.includes(g.id.slice(2))));
+  document.querySelectorAll('.arista').forEach(a=>{const on=!!p&&p.e.includes(a.id.slice(2));a.classList.toggle('on',on);a.classList.toggle('flujo',on)});
+  const gnum=document.getElementById('numeros');gnum.innerHTML='';
+  if(p){const id=p.n[p.n.length-1],n=N[id];el('circle',{cx:n.x+W-4,cy:n.y+4,r:13,class:'num-c'},gnum);el('text',{x:n.x+W-4,y:n.y+8.5,'text-anchor':'middle',class:'num'},gnum).textContent=paso+1}
+  document.querySelectorAll('#recorridos button').forEach(b=>b.setAttribute('aria-pressed',rec&&b.dataset.id===rec.id?'true':'false'));
+  const pr=$('#panelRec');
+  if(!rec){pr.innerHTML='<div class="eyebrow">Recorridos</div><h2>Elige un recorrido</h2><p class="vacio">Arriba están los recorridos del día a día. Cada uno ilumina en el diagrama las piezas por las que pasa, paso a paso.</p>';return}
+  pr.innerHTML=`<div class="eyebrow">Recorrido</div><h2>${rec.t}</h2><ol class="pasos">${rec.pasos.map((s,i)=>`<li data-i="${i}" class="${i===paso?'act':i<paso?'hecho':''}">${s.d}</li>`).join('')}</ol>
+   <div class="controles"><button class="btn" id="ant" ${paso===0?'disabled':''}>Anterior</button><button class="btn pri" id="sig" ${paso===rec.pasos.length-1?'disabled':''}>Siguiente</button><button class="btn" id="fin">Ver todo</button></div>`;
+  pr.querySelectorAll('li').forEach(li=>li.onclick=()=>{paso=+li.dataset.i;pintar()});
+  $('#ant').onclick=()=>{paso--;pintar()};$('#sig').onclick=()=>{paso++;pintar()};$('#fin').onclick=()=>{rec=null;pintar()};
+  if(p&&!sel)detalle(p.n[p.n.length-1],true);
+}
+function detalle(id,auto){if(!auto)sel=id;const n=N[id];
+  document.querySelectorAll('.nodo').forEach(g=>g.classList.toggle('sel',g.id==='n-'+id));
+  const k=n.k==='ok'?'ok':n.k;
+  $('#panelDet').innerHTML=`<div class="eyebrow">Pieza</div><h3>${n.t}</h3><span class="estado ${k}">${n.est}</span><p>${n.que}</p><dl><dt>Dónde</dt><dd><code>${n.donde}</code></dd></dl>`}
+
+const nav=$('#recorridos');
+R.forEach(r=>{const b=document.createElement('button');b.type='button';b.dataset.id=r.id;b.textContent=r.t;b.setAttribute('aria-pressed','false');
+  b.onclick=()=>{rec=rec&&rec.id===r.id?null:r;paso=0;sel=null;pintar()};nav.appendChild(b)});
+
+const HERR=[
+ ['ASP.NET Core + SQLite','Servidor local en un .exe de Windows, sin instalación; base en un solo archivo.'],
+ ['HTML + JavaScript','Interfaz sin framework, con gráficos Chart.js y exportación a Excel con SheetJS.'],
+ ['pdf.js + Tesseract','Lectura de PDF y OCR en español, dentro del navegador y sin internet.'],
+ ['Python (openpyxl)','convertir.py normaliza el Excel histórico desde 2011.'],
+ ['Cloudflare Workers, D1 y R2','Versión nube con la misma API; lista, sin desplegar.'],
+ ['GitHub Actions','Pruebas automáticas en cada cambio y despliegue a Cloudflare al fusionar.'],
+];
+document.getElementById('herr').innerHTML=HERR.map(([t,d])=>`<div class="h"><b>${t}</b><span>${d}</span></div>`).join('');
+
+// abre con el recorrido principal en marcha para que la primera vista muestre algo concreto
+rec=R[0];paso=2;pintar();
+</script>
+
+</body>
+</html>

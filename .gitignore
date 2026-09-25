@@ -15,3 +15,6 @@ servidor/obj/
 .claude/
 *.log
 out.txt
+
+# Demo local (scripts/demo.mjs)
+.demo/

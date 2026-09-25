@@ -1,0 +1,20 @@
+{
+  // GitHub Codespaces / Dev Containers: al abrir el proyecto queda listo y arranca la demo con datos ficticios.
+  "name": "Sistema de Correspondencia",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/dotnet:2": { "version": "10.0" },
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" }
+  },
+  "forwardPorts": [8765],
+  "portsAttributes": {
+    "8765": { "label": "Sistema de Correspondencia", "onAutoForward": "openBrowser" }
+  },
+  "postCreateCommand": "cd cloudflare && npm ci",
+  "postAttachCommand": "node scripts/demo.mjs",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-dotnettools.csharp", "ms-dotnettools.csdevkit"]
+    }
+  }
+}

@@ -6,6 +6,8 @@
 //   --datos <carpeta>      dónde viven correspondencia.db, data.js y respaldos/ (por defecto, junto al .exe)
 //   --puerto <n>           puerto HTTP (por defecto 8765)
 //   --sin-navegador        no abre el navegador al iniciar
+//   --web <carpeta>        carpeta de la interfaz (por defecto web/ junto al .exe; en desarrollo, dashboard/)
+//   --proxy                detrás de un proxy HTTPS (GitHub Codespaces, túnel): acepta su dominio como origen
 // La API y las reglas de seguridad son las mismas que las del Worker de Cloudflare (cloudflare/src/index.js).
 using System.Security.Cryptography;
 using System.Text;
@@ -267,9 +269,10 @@ void PonerCookie(HttpContext ctx, string valor, int segundos) =>
 
 // ---------- servidor web ----------
 var enRed = args.Contains("--red");
+var detrasDeProxy = args.Contains("--proxy");
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
-    Args = [], ContentRootPath = AppContext.BaseDirectory, WebRootPath = Path.Combine(AppContext.BaseDirectory, "web")
+    Args = [], ContentRootPath = AppContext.BaseDirectory, WebRootPath = Path.GetFullPath(Opcion("--web") ?? Path.Combine(AppContext.BaseDirectory, "web"))
 });
 builder.WebHost.UseUrls(enRed ? $"http://0.0.0.0:{puerto}" : $"http://127.0.0.1:{puerto}");
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
@@ -288,7 +291,10 @@ app.Use(async (ctx, siguiente) =>
     {
         // Bloqueo básico de CSRF: las escrituras deben venir del mismo origen.
         var origen = ctx.Request.Headers.Origin.FirstOrDefault();
-        if (!HttpMethods.IsGet(ctx.Request.Method) && origen is not null && origen != $"{ctx.Request.Scheme}://{ctx.Request.Host}")
+        var propio = origen == $"{ctx.Request.Scheme}://{ctx.Request.Host}"
+            // con --proxy el navegador ve el dominio del proxy (https://…app.github.dev), no localhost
+            || (detrasDeProxy && ctx.Request.Headers["X-Forwarded-Host"].FirstOrDefault() is string fh && origen == $"https://{fh}");
+        if (!HttpMethods.IsGet(ctx.Request.Method) && origen is not null && !propio)
             throw new ErrorHttp(403, "Origen no permitido");
         var ruta = ctx.Request.Path.Value!;
         if (ruta is not ("/api/login" or "/api/logout"))
