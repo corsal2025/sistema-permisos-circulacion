@@ -7,6 +7,7 @@ if not exist SISTEMA\web mkdir SISTEMA\web
 copy /Y dashboard\index.html SISTEMA\web\index.html >nul
 xcopy /Y /I /Q /E dashboard\vendor SISTEMA\web\vendor >nul
 xcopy /Y /I /Q /E dashboard\js SISTEMA\web\js >nul
+copy /Y mapa\index.html SISTEMA\web\mapa.html >nul
 if exist dashboard\data.js copy /Y dashboard\data.js SISTEMA\data.js >nul
 if exist SISTEMA\web.config del SISTEMA\web.config
 (echo @echo off& echo cd /d "%%~dp0"& echo CorrespondenciaPC.exe) > SISTEMA\INICIAR.bat
