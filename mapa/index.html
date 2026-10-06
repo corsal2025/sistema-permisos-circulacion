@@ -134,7 +134,6 @@ button:focus-visible,.nodo:focus-visible{outline:3px solid var(--focus);outline-
     </div>
     <div class="leyenda" aria-label="Leyenda">
       <span><i class="sw ok"></i>Funciona hoy (local)</span>
-      <span><i class="sw nube"></i>Versión nube, lista sin desplegar</span>
       <span><i class="sw pend"></i>Pendiente de información</span>
     </div>
   </header>
@@ -176,9 +175,7 @@ const N={
   exe:{x:365,y:116,t:'Servidor local',s:'CorrespondenciaPC.exe · .NET 10',k:'ok',
     que:'Un solo programa para Windows, sin instalar nada. Atiende en http://localhost:8765, o en la red con INICIAR EN RED.bat. Asigna el N° correlativo y guarda cada cambio.',donde:'servidor/Program.cs · PUBLICAR.bat',est:'Listo'},
   seguridad:{x:365,y:256,t:'Control de acceso',s:'Login, roles, validación',k:'ok',
-    que:'Contraseñas cifradas (PBKDF2), sesión de 12 horas, bloqueo de 15 minutos tras 5 intentos, rol administrador o funcionario, rechazo de datos mal formados y de pedidos de otros sitios. Aplica igual en el servidor local y en la nube.',donde:'servidor/Program.cs · cloudflare/src/index.js',est:'Listo · probado en ambos'},
-  worker:{x:365,y:396,t:'Versión nube',s:'Cloudflare Worker',k:'nube',
-    que:'La misma API y las mismas reglas, pero en Cloudflare, para entrar desde cualquier lugar. Está lista y probada, pero no se ha desplegado.',donde:'cloudflare/ · wrangler.toml',est:'Lista, sin desplegar'},
+    que:'Contraseñas cifradas (PBKDF2), sesión de 12 horas, bloqueo de 15 minutos tras 5 intentos, rol administrador o funcionario, rechazo de datos mal formados y de pedidos de otros sitios.',donde:'servidor/Program.cs',est:'Listo · probado'},
   outlook:{x:365,y:546,t:'Correo Outlook',s:'Bandeja "Por ingresar"',k:'pend',
     que:'Próximo paso: cada correo que llegue a la casilla de partes aparecerá como ingreso por revisar, con sus adjuntos ya leídos por el lector de oficios.',donde:'Microsoft 365 vía Microsoft Graph',est:'Falta: app en Entra ID (informática)'},
   sqlite:{x:710,y:56,t:'Base de datos local',s:'correspondencia.db (SQLite)',k:'ok',
@@ -187,16 +184,14 @@ const N={
     que:'Cada día se crea una copia completa de la base, con los adjuntos incluidos. Se conservan las últimas 30.',donde:'SISTEMA/respaldos/',est:'Listo · falta copiar fuera del PC'},
   historico:{x:710,y:296,t:'Histórico Excel',s:'CORRESPONDENCIA desde 2011',k:'ok',
     que:'El libro Excel anterior se convierte con convertir.py a data.js y se importa solo en el primer inicio. Unifica columnas, fechas, tipos y patentes.',donde:'dashboard/convertir.py → data.js',est:'Listo'},
-  d1r2:{x:710,y:416,t:'Datos en la nube',s:'D1 (registros) + R2 (archivos)',k:'nube',
-    que:'Base de datos y almacenamiento de archivos de Cloudflare para la versión nube. Se crean solos al desplegar.',donde:'cloudflare/migrations · wrangler.toml',est:'Listo, sin desplegar'},
-  ci:{x:710,y:546,t:'Pruebas y despliegue',s:'GitHub Actions',k:'nube',
-    que:'En cada cambio se corren las pruebas automáticas y se compila el servidor. Al fusionar a main, publica en Cloudflare si están configurados los secrets.',donde:'.github/workflows/',est:'Listo · faltan secrets'},
+  ci:{x:710,y:546,t:'Pruebas automáticas',s:'GitHub Actions',k:'ok',
+    que:'En cada cambio se corren las pruebas automáticas y se compila el servidor.',donde:'.github/workflows/',est:'Listo'},
 };
 const E=[
   ['persona','interfaz','ok'],['oficio','lector','ok'],['lector','interfaz','ok'],
-  ['interfaz','exe','ok'],['interfaz','worker','nube'],['exe','seguridad','ok'],['worker','seguridad','nube'],
-  ['exe','sqlite','ok'],['sqlite','respaldo','ok'],['historico','sqlite','ok'],['historico','d1r2','nube'],
-  ['worker','d1r2','nube'],['ci','worker','nube'],['outlook','exe','pend'],['outlook','lector','pend'],
+  ['interfaz','exe','ok'],['exe','seguridad','ok'],
+  ['exe','sqlite','ok'],['sqlite','respaldo','ok'],['historico','sqlite','ok'],
+  ['outlook','exe','pend'],['outlook','lector','pend'],
 ];
 const ID=(a,b)=>a+'-'+b;
 
@@ -237,12 +232,6 @@ const R=[
   {n:['historico','sqlite'],e:['historico-sqlite'],d:'Al abrir INICIAR.bat por primera vez, se crea la base y se importan todos los registros desde 2011.'},
   {n:['exe','sqlite'],e:['exe-sqlite'],d:'La consola pide crear el administrador. Luego se abre el navegador en http://localhost:8765.'},
   {n:['sqlite','respaldo'],e:['sqlite-respaldo'],d:'Cada día se crea un respaldo en SISTEMA/respaldos y se borran los de más de 30 días.'},
- ]},
- {id:'nube',t:'Versión nube (sin desplegar)',pasos:[
-  {n:['ci'],e:[],d:'En cada cambio subido a GitHub se corren las pruebas automáticas.'},
-  {n:['ci','worker'],e:['ci-worker'],d:'Al fusionar a main, y si están los secrets de Cloudflare, se publica la versión nube.'},
-  {n:['worker','d1r2','historico'],e:['worker-d1r2','historico-d1r2'],d:'Se crean la base D1 y el almacenamiento R2. El histórico o la base local se importan con npm run importar.'},
-  {n:['interfaz','worker','seguridad'],e:['interfaz-worker','worker-seguridad'],d:'La misma pantalla y las mismas reglas, desde cualquier lugar. Antes hay que confirmar con protección de datos (Ley 19.628).'},
  ]},
  {id:'outlook',t:'Correo Outlook (próximo)',pasos:[
   {n:['outlook'],e:[],d:'Llega un correo a la casilla de partes (Microsoft 365).'},
@@ -311,8 +300,7 @@ const HERR=[
  ['HTML + JavaScript','Interfaz sin framework, con gráficos Chart.js y exportación a Excel con SheetJS.'],
  ['pdf.js + Tesseract','Lectura de PDF y OCR en español, dentro del navegador y sin internet.'],
  ['Python (openpyxl)','convertir.py normaliza el Excel histórico desde 2011.'],
- ['Cloudflare Workers, D1 y R2','Versión nube con la misma API; lista, sin desplegar.'],
- ['GitHub Actions','Pruebas automáticas en cada cambio y despliegue a Cloudflare al fusionar.'],
+ ['GitHub Actions','Pruebas automáticas en cada cambio.'],
 ];
 document.getElementById('herr').innerHTML=HERR.map(([t,d])=>`<div class="h"><b>${t}</b><span>${d}</span></div>`).join('');
 

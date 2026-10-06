@@ -1,6 +1,5 @@
-// Prueba de punta a punta de la API. Los mismos casos validan los dos servidores:
-//   npm test               -> Worker de Cloudflare con `wrangler dev` y una D1 local temporal (sin cuenta)
-//   npm run test:dotnet    -> servidor .exe (servidor/Program.cs) con una carpeta de datos temporal
+// Prueba de punta a punta de la API contra el servidor .exe (servidor/Program.cs)
+// con una carpeta de datos temporal. Requiere el SDK de .NET 10:  cd pruebas && npm test
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
@@ -9,26 +8,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-process.env.WRANGLER_SEND_METRICS = 'false';
-const DOTNET = process.env.SERVIDOR === 'dotnet';
-const PUERTO = DOTNET ? 8797 : 8799, BASE = `http://127.0.0.1:${PUERTO}`;
-const RAIZ = fileURLToPath(new URL('../../', import.meta.url));
+const PUERTO = 8797, BASE = `http://127.0.0.1:${PUERTO}`;
+const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 const estado = mkdtempSync(join(tmpdir(), 'correspondencia-prueba-'));
 const CLAVE = 'clave-segura-123';
 let servidor;
-
-function prepararWorker() {
-  const w = (...a) => execFileSync('npx', ['wrangler', ...a, '--persist-to', estado], { stdio: 'pipe' });
-  execFileSync('node', ['scripts/build.mjs']);
-  w('d1', 'migrations', 'apply', 'correspondencia', '--local');
-  const sql = (u, n, rol) => execFileSync('node', ['-e', `
-    const c=require('crypto');const s=c.randomBytes(16).toString('hex');
-    const h=c.pbkdf2Sync('${CLAVE}',Buffer.from(s,'hex'),100000,32,'sha256').toString('hex');
-    process.stdout.write("INSERT INTO usuarios(usuario,nombre,hash,sal,rol) VALUES('${u}','${n}','"+h+"','"+s+"','${rol}')")`]).toString();
-  w('d1', 'execute', 'correspondencia', '--local', '--command', sql('admin', 'ADMIN PRUEBA', 'admin'));
-  w('d1', 'execute', 'correspondencia', '--local', '--command', sql('ana', 'ANA PRUEBA', 'funcionario'));
-  return spawn('npx', ['wrangler', 'dev', '--port', String(PUERTO), '--ip', '127.0.0.1', '--persist-to', estado], { stdio: 'ignore', detached: true });
-}
 
 function prepararDotnet() {
   const salida = join(estado, 'bin');
@@ -44,7 +28,7 @@ function prepararDotnet() {
 }
 
 before(async () => {
-  servidor = DOTNET ? prepararDotnet() : prepararWorker();
+  servidor = prepararDotnet();
   for (let i = 0; i < 90; i++) {
     try { await fetch(BASE + '/'); return; } catch { await new Promise(r => setTimeout(r, 500)); }
   }

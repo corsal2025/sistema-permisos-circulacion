@@ -8,7 +8,6 @@
 //   --sin-navegador        no abre el navegador al iniciar
 //   --web <carpeta>        carpeta de la interfaz (por defecto web/ junto al .exe; en desarrollo, dashboard/)
 //   --proxy                detrás de un proxy HTTPS (GitHub Codespaces, túnel): acepta su dominio como origen
-// La API y las reglas de seguridad son las mismas que las del Worker de Cloudflare (cloudflare/src/index.js).
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -73,7 +72,7 @@ string Param(int cantidad) => string.Join(",", Enumerable.Range(0, cantidad).Sel
 string Texto(JsonNode? n) => n is null ? "" : n.GetValueKind() == JsonValueKind.String ? n.GetValue<string>() : n.ToJsonString();
 object ValorImportado(string campo, JsonNode? n) => campo == "monto" ? (long.TryParse(Texto(n), out var m) ? m : 0L) : Texto(n);
 
-// ---------- cifrado (compatible con el Worker: PBKDF2-SHA256, 100.000 iteraciones, 32 bytes) ----------
+// ---------- cifrado (PBKDF2-SHA256, 100.000 iteraciones, 32 bytes) ----------
 string Derivar(string clave, string salHex) =>
     Convert.ToHexStringLower(Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(clave), Convert.FromHexString(salHex), Iteraciones, HashAlgorithmName.SHA256, 32));
 string Sha256(string texto) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(texto)));

@@ -295,7 +295,7 @@ const stp=e=>`<span class="st ${e}">${e==='PENDIENTE'?'Pendiente':'Cerrado'}</sp
 function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._);t._=setTimeout(()=>t.style.display='none',2600)}
 
 /* ---------- usuario y servidor ---------- */
-// modo 'nube': Cloudflare Worker con login. modo 'local': servidor .exe, el usuario solo escribe su nombre.
+// modo 'nube': el servidor exige login (caso normal). modo 'local': servidor sin /api/yo, el usuario solo escribe su nombre.
 let usuario='',modo='local',yo=null,alEntrar=null;try{usuario=localStorage.getItem('pc_usuario')||''}catch(e){}
 function pintarUsuario(){$('#yo').textContent=usuario||'Sin nombre';$('#av').textContent=ini(usuario);
  $('#uSub').textContent=modo==='nube'?(yo?.rol==='admin'?'Administrador':'Mi cuenta'):'Cambiar usuario'}

@@ -2,9 +2,9 @@ name: Servidor .NET
 
 on:
   push:
-    paths: ['servidor/**', 'dashboard/**', 'cloudflare/test/**', '.github/workflows/servidor.yml']
+    paths: ['servidor/**', 'dashboard/**', 'pruebas/**', '.github/workflows/servidor.yml']
   pull_request:
-    paths: ['servidor/**', 'dashboard/**', 'cloudflare/test/**', '.github/workflows/servidor.yml']
+    paths: ['servidor/**', 'dashboard/**', 'pruebas/**', '.github/workflows/servidor.yml']
 
 permissions:
   contents: read
@@ -21,10 +21,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: cloudflare/package-lock.json
-      - name: Pruebas de API contra el servidor .exe
-        working-directory: cloudflare
-        run: |
-          npm ci
-          npm run test:dotnet
+      - name: Pruebas de API contra el servidor .exe y del lector de oficios
+        working-directory: pruebas
+        run: npm test
