@@ -2,9 +2,9 @@ name: Servidor .NET
 
 on:
   push:
-    paths: ['servidor/**', '.github/workflows/servidor.yml']
+    paths: ['servidor/**', 'dashboard/**', 'pruebas/**', '.github/workflows/servidor.yml']
   pull_request:
-    paths: ['servidor/**', '.github/workflows/servidor.yml']
+    paths: ['servidor/**', 'dashboard/**', 'pruebas/**', '.github/workflows/servidor.yml']
 
 permissions:
   contents: read
@@ -18,3 +18,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: dotnet build servidor/Servidor.csproj -c Release
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pruebas de API contra el servidor .exe y del lector de oficios
+        working-directory: pruebas
+        run: npm test

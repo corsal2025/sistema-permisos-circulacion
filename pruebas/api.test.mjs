@@ -1,6 +1,5 @@
-// Prueba de punta a punta de la API. Los mismos casos validan los dos servidores:
-//   npm test               -> Worker de Cloudflare con `wrangler dev` y una D1 local temporal (sin cuenta)
-//   npm run test:dotnet    -> servidor .exe (servidor/Program.cs) con una carpeta de datos temporal
+// Prueba de punta a punta de la API contra el servidor .exe (servidor/Program.cs)
+// con una carpeta de datos temporal. Requiere el SDK de .NET 10:  cd pruebas && npm test
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
@@ -9,26 +8,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-process.env.WRANGLER_SEND_METRICS = 'false';
-const DOTNET = process.env.SERVIDOR === 'dotnet';
-const PUERTO = DOTNET ? 8797 : 8799, BASE = `http://127.0.0.1:${PUERTO}`;
-const RAIZ = fileURLToPath(new URL('../../', import.meta.url));
+const PUERTO = 8797, BASE = `http://127.0.0.1:${PUERTO}`;
+const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 const estado = mkdtempSync(join(tmpdir(), 'correspondencia-prueba-'));
 const CLAVE = 'clave-segura-123';
 let servidor;
-
-function prepararWorker() {
-  const w = (...a) => execFileSync('npx', ['wrangler', ...a, '--persist-to', estado], { stdio: 'pipe' });
-  execFileSync('node', ['scripts/build.mjs']);
-  w('d1', 'migrations', 'apply', 'correspondencia', '--local');
-  const sql = (u, n, rol) => execFileSync('node', ['-e', `
-    const c=require('crypto');const s=c.randomBytes(16).toString('hex');
-    const h=c.pbkdf2Sync('${CLAVE}',Buffer.from(s,'hex'),100000,32,'sha256').toString('hex');
-    process.stdout.write("INSERT INTO usuarios(usuario,nombre,hash,sal,rol) VALUES('${u}','${n}','"+h+"','"+s+"','${rol}')")`]).toString();
-  w('d1', 'execute', 'correspondencia', '--local', '--command', sql('admin', 'ADMIN PRUEBA', 'admin'));
-  w('d1', 'execute', 'correspondencia', '--local', '--command', sql('ana', 'ANA PRUEBA', 'funcionario'));
-  return spawn('npx', ['wrangler', 'dev', '--port', String(PUERTO), '--ip', '127.0.0.1', '--persist-to', estado], { stdio: 'ignore', detached: true });
-}
 
 function prepararDotnet() {
   const salida = join(estado, 'bin');
@@ -44,7 +28,7 @@ function prepararDotnet() {
 }
 
 before(async () => {
-  servidor = DOTNET ? prepararDotnet() : prepararWorker();
+  servidor = prepararDotnet();
   for (let i = 0; i < 90; i++) {
     try { await fetch(BASE + '/'); return; } catch { await new Promise(r => setTimeout(r, 500)); }
   }
@@ -100,6 +84,26 @@ test('validación de entrada', async () => {
   assert.equal((await pedir('/api/registros', { metodo: 'POST', cookie: c, cuerpo: { fecha: '2026-01-01' } })).status, 400);
   const r = await fetch(BASE + '/api/registros', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: c }, body: '{roto' });
   assert.equal(r.status, 400);
+});
+
+test('rechaza marcado HTML en patente, tipo y destinatario (XSS almacenado)', async () => {
+  const c = await entrar('ana');
+  const base = { fecha: '2026-06-01', proc_: 'A', materia: 'M' };
+  const crear = extra => pedir('/api/registros', { metodo: 'POST', cookie: c, cuerpo: { ...base, ...extra } });
+  assert.equal((await crear({ ppu: '<SVG/ONLOAD=&#97;lert(1)>' })).status, 400);
+  assert.equal((await crear({ tipo: '<img src=x>' })).status, 400);
+  assert.equal((await crear({ dest: 'A"B' })).status, 400);
+  const ok = await crear({ ppu: 'kjpb54 ab1234', tipo: 'PAGO / FONDOS', dest: 'ROSA PEREZ' });
+  assert.equal(ok.status, 201);
+  assert.equal(ok.datos.ppu, 'KJPB54 AB1234');
+  const mal = await pedir('/api/registros/' + ok.datos.id, { metodo: 'PUT', cookie: c, cuerpo: { ppu: '<b>', version: ok.datos.actualizado } });
+  assert.equal(mal.status, 400);
+});
+
+test('editar exige la versión del registro', async () => {
+  const c = await entrar('ana');
+  const r = (await pedir('/api/registros', { metodo: 'POST', cookie: c, cuerpo: { fecha: '2026-06-02', proc_: 'A', materia: 'M' } })).datos;
+  assert.equal((await pedir('/api/registros/' + r.id, { metodo: 'PUT', cookie: c, cuerpo: { procedimiento: 'x' } })).status, 400);
 });
 
 test('edición con historial y conflicto 409 por edición concurrente', async () => {
@@ -190,12 +194,16 @@ test('adjuntos: subir, listar, descargar aislado, rechazar tipos peligrosos y pe
   assert.equal((await subir(Buffer.from('MZ\x90\x00 programa'), 'application/pdf', 'virus.pdf')).status, 415);
   // un HTML no es un tipo permitido
   assert.equal((await subir(Buffer.from('<script>alert(1)</script>'), 'text/html', 'x.html')).status, 415);
+  // un OLE con tipo declarado arbitrario se degrada a octet-stream (se baja como archivo, nunca se interpreta)
+  const ole = Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0, 0, 0, 0]);
+  assert.equal((await (await subir(ole, 'application/xhtml+xml', 'x.doc')).json()).tipo, 'application/octet-stream');
+  assert.equal((await (await subir(ole, 'application/msword', 'x.doc')).json()).tipo, 'application/msword');
   // los nombres con rutas se limpian
   const b = await (await subir(pdf, 'application/pdf', '../../etc/passwd.pdf')).json();
   assert.ok(!b.nombre.includes('/'));
 
   const lista = await pedir(`/api/registros/${reg.id}/adjuntos`, { cookie: c });
-  assert.equal(lista.datos.length, 2);
+  assert.equal(lista.datos.length, 4);
 
   const d = await fetch(`${BASE}/api/adjuntos/${a.id}`, { headers: { Cookie: c } });
   assert.equal(d.status, 200);
@@ -211,5 +219,5 @@ test('adjuntos: subir, listar, descargar aislado, rechazar tipos peligrosos y pe
   const del = await fetch(`${BASE}/api/adjuntos/${a.id}`, { method: 'DELETE', headers: { Cookie: c } });
   assert.equal(del.status, 200);
   assert.equal((await fetch(`${BASE}/api/adjuntos/${a.id}`, { headers: { Cookie: c } })).status, 404);
-  assert.equal((await pedir(`/api/registros/${reg.id}/adjuntos`, { cookie: c })).datos.length, 1);
+  assert.equal((await pedir(`/api/registros/${reg.id}/adjuntos`, { cookie: c })).datos.length, 3);
 });

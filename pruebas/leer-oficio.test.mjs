@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-const { leerOficio } = createRequire(import.meta.url)('../../dashboard/js/leer-oficio.js');
+const { leerOficio } = createRequire(import.meta.url)('../dashboard/js/leer-oficio.js');
 
 test('oficio municipal típico (PDF digital)', () => {
   const r = leerOficio(`ILUSTRE MUNICIPALIDAD DE QUILPUÉ

@@ -13,7 +13,7 @@ Reemplaza el libro Excel `CORRESPONDENCIA` que se llevaba desde 2011.
 - **Multiusuario**: cada cambio queda registrado con usuario, fecha, valor anterior y nuevo.
 - **Control de conflictos**: si dos personas editan la misma ficha, la segunda recibe aviso en vez de pisar el cambio.
 - **Exportar a Excel** de la vista filtrada (funciona sin internet: Chart.js y SheetJS van incluidos en `dashboard/vendor/`).
-- **Inicio de sesión** con contraseña, roles (administrador / funcionario), administración de usuarios y bloqueo por intentos fallidos, tanto en el `.exe` local como en la nube.
+- **Inicio de sesión** con contraseña, roles (administrador / funcionario), administración de usuarios y bloqueo por intentos fallidos.
 - **Documentos adjuntos y lectura automática**: arrastra el PDF o la foto del oficio a la ficha (o a cualquier parte de la pantalla).
   En un ingreso nuevo se leen procedencia, N° y fecha del oficio, materia, patentes, monto y tipo, y se marcan en amarillo para revisar.
   Funciona con PDF digitales (pdf.js) y con escaneos o fotos (OCR en español con Tesseract), todo dentro del navegador y sin internet.
@@ -29,13 +29,10 @@ Reemplaza el libro Excel `CORRESPONDENCIA` que se llevaba desde 2011.
 | Interfaz | HTML + JS sin framework, Chart.js, SheetJS | `dashboard/index.html` |
 | Migración inicial | Script que normaliza el Excel histórico a `data.js` | `dashboard/convertir.py` |
 | Lector de oficios | Extracción de datos del texto del documento (probado con `npm test`) | `dashboard/js/leer-oficio.js` |
-| Versión nube | Cloudflare Worker + D1 + R2 (adjuntos) + Workers Assets | `cloudflare/` |
+| Pruebas | Node `node:test`: API contra el `.exe` y lector de oficios | `pruebas/` |
 
 API: `GET /api/registros?desde=<ts>`, `POST /api/registros`, `PUT /api/registros/{id}`, `GET /api/historial/{id}`.
-Adjuntos: `GET|POST /api/registros/{id}/adjuntos`, `GET|DELETE /api/adjuntos/{id}` (en el `.exe` se guardan en la base y entran al respaldo; en la nube, en R2).
-
-La misma `index.html` y la misma API sirven para ambas versiones (`servidor/Program.cs` y `cloudflare/src/index.js`
-aplican las mismas reglas de seguridad y validación, y las contraseñas usan el mismo formato PBKDF2).
+Adjuntos: `GET|POST /api/registros/{id}/adjuntos`, `GET|DELETE /api/adjuntos/{id}` (se guardan en la base y entran al respaldo diario).
 
 ## Probarlo con datos ficticios
 
@@ -66,64 +63,24 @@ El diagrama de cómo funciona el sistema está en `docs/mapa-sistema.html` (se a
 El sistema deja una copia diaria en `SISTEMA/respaldos/`; igual conviene copiar esa carpeta a otro equipo o unidad.
 Otras opciones: `--datos <carpeta>` (dónde guardar la base y los respaldos) y `--puerto <n>`.
 
-## Versión Cloudflare (`cloudflare/`)
-
-El Worker (`src/index.js`) expone la misma API más `/api/login`, `/api/logout`, `/api/yo`, `/api/clave` y `/api/usuarios` (solo admin).
-Seguridad: contraseñas PBKDF2-SHA256 (100.000 iteraciones), sesión en cookie `HttpOnly; Secure; SameSite=Strict` de 12 h
+Seguridad: contraseñas PBKDF2-SHA256 (100.000 iteraciones), sesión en cookie `HttpOnly; SameSite=Strict` de 12 h
 (en la base solo se guarda el hash del token), bloqueo de 15 min tras 5 intentos fallidos, verificación de `Origin` en escrituras,
-validación y límite de tamaño de las entradas, cabeceras CSP/HSTS/X-Frame-Options. El usuario del historial sale de la sesión,
-no de lo que envía el navegador.
+validación y límite de tamaño de las entradas. El usuario del historial sale de la sesión, no de lo que envía el navegador.
 
-### Desplegar con GitHub Actions (recomendado)
+## Pruebas
 
-1. En Cloudflare, crear un **API Token** con permisos *Workers Scripts: Edit* y *D1: Edit* (cuenta propia).
-2. En GitHub → *Settings → Secrets and variables → Actions*, agregar `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID`.
-3. Hacer merge a `main` (o ejecutar el workflow *Cloudflare* a mano). El workflow corre las pruebas, crea la base D1
-   `correspondencia` si no existe, aplica las migraciones y publica en `https://correspondencia-permisos.<subdominio>.workers.dev`.
-
-### Desplegar desde un PC
+Casos de login, bloqueo, correlativo, historial, conflictos, permisos de administrador, validación (XSS), adjuntos, CSRF y cabeceras
+contra el servidor `.exe`, más las pruebas del lector de oficios (requiere .NET 10 SDK y Node 22):
 
 ```bash
-cd cloudflare
-npm install
-npx wrangler login
-npx wrangler d1 create correspondencia     # copiar el database_id a wrangler.toml
-npm run deploy
-```
-
-### Primer administrador y datos históricos (desde un PC con el Excel o la base local)
-
-```bash
-cd cloudflare
-npm run usuario -- rsalazar "RAUL SALAZAR" admin          # pide la contraseña (mín. 10 caracteres)
-npm run importar -- ../SISTEMA/correspondencia.db         # conserva ids e historial de la versión .exe
-# o bien: npm run importar -- ../dashboard/data.js        # desde el Excel convertido
-```
-
-Los siguientes usuarios se crean desde la interfaz: clic en el nombre (abajo a la izquierda) → *Administrar usuarios*.
-La importación se niega a correr si la base D1 ya tiene registros.
-
-**Recomendado**: agregar además **Cloudflare Access** (Zero Trust, gratis hasta 50 usuarios) delante del Worker,
-limitado a los correos municipales, como segunda capa antes del login.
-
-### Pruebas
-
-Los mismos casos (login, bloqueo, correlativo, historial, conflictos, permisos de administrador, CSRF y cabeceras)
-se corren contra los dos servidores:
-
-```bash
-cd cloudflare
-npm test              # Worker con una D1 local temporal (no requiere cuenta de Cloudflare)
-npm run test:dotnet   # servidor .exe (requiere .NET 10 SDK)
+cd pruebas
+npm test
 ```
 
 ## Datos
 
 Los datos reales (Excel, `data.js`, `correspondencia.db`) contienen información personal de contribuyentes
-y **no se versionan** (ver `.gitignore`). En la versión nube quedan en la base D1 de la cuenta Cloudflare del municipio;
-antes de subirlos, confirmar con el encargado de protección de datos (Ley 19.628) que el uso de ese proveedor está autorizado.
-D1 tiene *Time Travel* (restaurar a cualquier punto de los últimos 30 días); igual conviene exportar un respaldo
-periódico con `npx wrangler d1 export correspondencia --remote --output respaldo.sql`.
+y **no se versionan** (ver `.gitignore`). El respaldo es la carpeta `SISTEMA/respaldos/` (ver arriba); conviene copiarla periódicamente a otro equipo.
 
 ## Pendiente
 

@@ -10,7 +10,6 @@
   "portsAttributes": {
     "8765": { "label": "Sistema de Correspondencia", "onAutoForward": "openBrowser" }
   },
-  "postCreateCommand": "cd cloudflare && npm ci",
   "postAttachCommand": "node scripts/demo.mjs",
   "customizations": {
     "vscode": {
