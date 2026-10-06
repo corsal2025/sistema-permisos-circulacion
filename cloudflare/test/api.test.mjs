@@ -102,6 +102,26 @@ test('validación de entrada', async () => {
   assert.equal(r.status, 400);
 });
 
+test('rechaza marcado HTML en patente, tipo y destinatario (XSS almacenado)', async () => {
+  const c = await entrar('ana');
+  const base = { fecha: '2026-06-01', proc_: 'A', materia: 'M' };
+  const crear = extra => pedir('/api/registros', { metodo: 'POST', cookie: c, cuerpo: { ...base, ...extra } });
+  assert.equal((await crear({ ppu: '<SVG/ONLOAD=&#97;lert(1)>' })).status, 400);
+  assert.equal((await crear({ tipo: '<img src=x>' })).status, 400);
+  assert.equal((await crear({ dest: 'A"B' })).status, 400);
+  const ok = await crear({ ppu: 'kjpb54 ab1234', tipo: 'PAGO / FONDOS', dest: 'ROSA PEREZ' });
+  assert.equal(ok.status, 201);
+  assert.equal(ok.datos.ppu, 'KJPB54 AB1234');
+  const mal = await pedir('/api/registros/' + ok.datos.id, { metodo: 'PUT', cookie: c, cuerpo: { ppu: '<b>', version: ok.datos.actualizado } });
+  assert.equal(mal.status, 400);
+});
+
+test('editar exige la versión del registro', async () => {
+  const c = await entrar('ana');
+  const r = (await pedir('/api/registros', { metodo: 'POST', cookie: c, cuerpo: { fecha: '2026-06-02', proc_: 'A', materia: 'M' } })).datos;
+  assert.equal((await pedir('/api/registros/' + r.id, { metodo: 'PUT', cookie: c, cuerpo: { procedimiento: 'x' } })).status, 400);
+});
+
 test('edición con historial y conflicto 409 por edición concurrente', async () => {
   const c = await entrar('ana');
   const r = (await pedir('/api/registros', { metodo: 'POST', cookie: c, cuerpo: { fecha: '2026-04-01', proc_: 'A', materia: 'M' } })).datos;
@@ -190,12 +210,16 @@ test('adjuntos: subir, listar, descargar aislado, rechazar tipos peligrosos y pe
   assert.equal((await subir(Buffer.from('MZ\x90\x00 programa'), 'application/pdf', 'virus.pdf')).status, 415);
   // un HTML no es un tipo permitido
   assert.equal((await subir(Buffer.from('<script>alert(1)</script>'), 'text/html', 'x.html')).status, 415);
+  // un OLE con tipo declarado arbitrario se degrada a octet-stream (se baja como archivo, nunca se interpreta)
+  const ole = Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0, 0, 0, 0]);
+  assert.equal((await (await subir(ole, 'application/xhtml+xml', 'x.doc')).json()).tipo, 'application/octet-stream');
+  assert.equal((await (await subir(ole, 'application/msword', 'x.doc')).json()).tipo, 'application/msword');
   // los nombres con rutas se limpian
   const b = await (await subir(pdf, 'application/pdf', '../../etc/passwd.pdf')).json();
   assert.ok(!b.nombre.includes('/'));
 
   const lista = await pedir(`/api/registros/${reg.id}/adjuntos`, { cookie: c });
-  assert.equal(lista.datos.length, 2);
+  assert.equal(lista.datos.length, 4);
 
   const d = await fetch(`${BASE}/api/adjuntos/${a.id}`, { headers: { Cookie: c } });
   assert.equal(d.status, 200);
@@ -211,5 +235,5 @@ test('adjuntos: subir, listar, descargar aislado, rechazar tipos peligrosos y pe
   const del = await fetch(`${BASE}/api/adjuntos/${a.id}`, { method: 'DELETE', headers: { Cookie: c } });
   assert.equal(del.status, 200);
   assert.equal((await fetch(`${BASE}/api/adjuntos/${a.id}`, { headers: { Cookie: c } })).status, 404);
-  assert.equal((await pedir(`/api/registros/${reg.id}/adjuntos`, { cookie: c })).datos.length, 1);
+  assert.equal((await pedir(`/api/registros/${reg.id}/adjuntos`, { cookie: c })).datos.length, 3);
 });

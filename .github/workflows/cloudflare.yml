@@ -3,9 +3,9 @@ name: Cloudflare
 on:
   push:
     branches: [main]
-    paths: ['cloudflare/**', 'dashboard/index.html', 'dashboard/vendor/**', '.github/workflows/cloudflare.yml']
+    paths: ['cloudflare/**', 'dashboard/index.html', 'dashboard/js/**', 'dashboard/vendor/**', '.github/workflows/cloudflare.yml']
   pull_request:
-    paths: ['cloudflare/**', 'dashboard/index.html', 'dashboard/vendor/**', '.github/workflows/cloudflare.yml']
+    paths: ['cloudflare/**', 'dashboard/index.html', 'dashboard/js/**', 'dashboard/vendor/**', '.github/workflows/cloudflare.yml']
   workflow_dispatch:
 
 concurrency:

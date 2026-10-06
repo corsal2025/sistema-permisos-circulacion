@@ -111,7 +111,14 @@ object Normalizar(string campo, JsonNode? v)
     var t = (v is null || v.GetValueKind() == JsonValueKind.Null ? "" : Texto(v)).Trim();
     if (t.Length > LargoMax) throw new ErrorHttp(400, $"El campo {campo} es demasiado largo");
     if (campo == "fecha" && t != "" && !Regex.IsMatch(t, @"^\d{4}-\d{2}-\d{2}$")) throw new ErrorHttp(400, "Fecha inválida (AAAA-MM-DD)");
-    return campo is "ppu" or "dest" or "proc_" ? t.ToUpperInvariant() : t;
+    if (campo == "ppu")
+    {
+        var u = t.ToUpperInvariant();
+        if (!Regex.IsMatch(u, "^[A-Z0-9 ]{0,200}$")) throw new ErrorHttp(400, "Patente inválida (solo letras, números y espacios)");
+        return u;
+    }
+    if (campo is "tipo" or "dest" && t.IndexOfAny(['<', '>', '"', '&']) >= 0) throw new ErrorHttp(400, $"El campo {campo} contiene caracteres no permitidos");
+    return campo is "dest" or "proc_" ? t.ToUpperInvariant() : t;
 }
 
 // ---------- base de datos ----------
@@ -485,9 +492,10 @@ app.MapPut("/api/registros/{id:long}", async (long id, HttpContext ctx) =>
         using var c = Conectar();
         var viejo = Uno(c, "SELECT * FROM registros WHERE id=$p0", id) ?? throw new ErrorHttp(404, "Registro no encontrado");
         // control de concurrencia: si otro usuario guardó después de que se abrió la ficha, no se pisa su cambio
-        if (d["version"] is JsonNode ver && ver.GetValueKind() != JsonValueKind.Null
-            && double.TryParse(Texto(ver), System.Globalization.CultureInfo.InvariantCulture, out var version)
-            && Math.Abs(version - Convert.ToDouble(viejo["actualizado"] ?? 0.0)) > 1e-6)
+        if (d["version"] is not JsonNode ver || ver.GetValueKind() == JsonValueKind.Null
+            || !double.TryParse(Texto(ver), System.Globalization.CultureInfo.InvariantCulture, out var version))
+            throw new ErrorHttp(400, "Falta la versión del registro (campo version)");
+        if (Math.Abs(version - Convert.ToDouble(viejo["actualizado"] ?? 0.0)) > 1e-6)
             return Results.Json(new { error = "Otro usuario modificó este ingreso mientras lo editabas. Revisa los cambios y vuelve a guardar.", registro = viejo }, statusCode: 409);
         var cambios = new Dictionary<string, object>();
         foreach (var k in editables)
@@ -515,6 +523,7 @@ app.MapPut("/api/registros/{id:long}", async (long id, HttpContext ctx) =>
 });
 
 // ---------- adjuntos (PDF del oficio, escaneos, respuesta) ----------
+string[] TiposOle = ["application/msword", "application/vnd.ms-excel", "application/vnd.ms-outlook"];
 string? TipoPermitido(string tipo, byte[] d)
 {
     // Se confía en la firma del archivo, no en lo que declara el navegador.
@@ -524,7 +533,7 @@ string? TipoPermitido(string tipo, byte[] d)
     if (Empieza(0x89, 0x50, 0x4E, 0x47)) return "image/png";
     if (Empieza(0x49, 0x49, 0x2A, 0x00) || Empieza(0x4D, 0x4D, 0x00, 0x2A)) return "image/tiff";
     if (Empieza(0x50, 0x4B, 0x03, 0x04) && tipo.Contains("officedocument")) return tipo; // docx / xlsx
-    if (Empieza(0xD0, 0xCF, 0x11, 0xE0)) return tipo.StartsWith("application/") ? tipo : "application/octet-stream"; // doc / xls / msg
+    if (Empieza(0xD0, 0xCF, 0x11, 0xE0)) return TiposOle.Contains(tipo) ? tipo : "application/octet-stream"; // doc / xls / msg
     if (tipo == "message/rfc822") return tipo;
     return null;
 }

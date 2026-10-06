@@ -283,7 +283,7 @@ dialog .fila{display:flex;gap:8px}dialog .fila .btn{width:auto;flex:1}dialog .co
 
 <script>
 const DATA=[],POR_ID=new Map();let ultimo=-1;
-const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtF=d=>d?d.split('-').reverse().join('.'):'—',clp=n=>'$'+Number(n||0).toLocaleString('es-CL'),nf=n=>n.toLocaleString('es-CL');
 const clpCorto=n=>n>=1e7?`<abbr title="${clp(n)}" style="text-decoration:none">$${(n/1e6).toLocaleString('es-CL',{maximumFractionDigits:1})} M</abbr>`:clp(n);
 const estado=r=>(r.procedimiento||'').trim()?'CERRADO':'PENDIENTE';
@@ -383,7 +383,7 @@ function planilla(){
  $('#cnt').textContent=`${nf(filas.length)} registros · ${nf(filas.filter(r=>r.estado==='PENDIENTE').length)} pendientes`;
  if(!filas.length)$('#tb').innerHTML='<tr><td colspan="8" class="empty" style="height:auto">Sin resultados para estos filtros.</td></tr>';
 }
-function plates(p){const a=String(p||'').split(' ').filter(Boolean);return a.slice(0,2).map(x=>`<span class="plate">${x}</span>`).join('')+(a.length>2?`<span class="more">+${a.length-2}</span>`:'')}
+function plates(p){const a=String(p||'').split(' ').filter(Boolean);return a.slice(0,2).map(x=>`<span class="plate">${esc(x)}</span>`).join('')+(a.length>2?`<span class="more">+${a.length-2}</span>`:'')}
 function fila(r){return `<tr data-id="${r.id}" class="${r.id===activa?'act':''}" title="${esc(r.materia)}"><td class="num">${esc(r.n)}</td><td class="num">${fmtF(r.fecha)}</td><td>${tag(r.tipo)}</td>
  <td class="pro" title="${esc(r.proc_)}">${esc(r.proc_)}</td><td class="mat">${esc(r.materia)}</td><td>${plates(r.ppu)}</td><td>${esc(r.dest)}</td><td>${stp(r.estado)}</td></tr>`}
 function mas(){const n=Math.min(filas.length,pintadas+120);$('#tb').insertAdjacentHTML('beforeend',filas.slice(pintadas,n).map(fila).join(''));pintadas=n}
@@ -491,9 +491,9 @@ async function inicio(){
  if(!sesion)await new Promise(res=>{alEntrar=res;pedirLogin()});
  await sincronizar();
  const anios=[...new Set([...DATA.map(r=>r.hoja).filter(Boolean),String(new Date().getFullYear())])].sort().reverse();
- $('#anio').innerHTML='<option value="">Todos los años</option>'+anios.map(a=>`<option>${a}</option>`).join('');$('#anio').value=anios[0];$('#anio').onchange=render;
+ $('#anio').innerHTML='<option value="">Todos los años</option>'+anios.map(a=>`<option>${esc(a)}</option>`).join('');$('#anio').value=anios[0];$('#anio').onchange=render;
  const tipos=[...new Set([...DATA.map(r=>r.tipo).filter(Boolean),'TRASLADO','BLOQUEO','DESBLOQUEO','LEY 18.440','PAGO / FONDOS','PRESCRIPCION','DEVOLUCION','PLACAS PROVISORIAS','MULTAS / RNMP','EXENTOS','INE / ESTADISTICA','BAJA / ROBO','OTROS'])].sort();
- $('#fTipo').innerHTML+=tipos.map(t=>`<option>${t}</option>`).join('');$('#dTipo').innerHTML=tipos.map(t=>`<option>${t}</option>`).join('');
+ $('#fTipo').innerHTML+=tipos.map(t=>`<option>${esc(t)}</option>`).join('');$('#dTipo').innerHTML=tipos.map(t=>`<option>${esc(t)}</option>`).join('');
  const topN=(k,n,min=1)=>{const c={};DATA.slice(-5000).forEach(r=>{if(r[k])c[r[k]]=(c[r[k]]||0)+1});return Object.entries(c).filter(x=>x[1]>=min).sort((a,b)=>b[1]-a[1]).slice(0,n)};
  $('#lProc').innerHTML=topN('proc_',300).map(x=>`<option value="${esc(x[0])}">`).join('');
  $('#lArch').innerHTML=topN('archivo',60).map(x=>`<option value="${esc(x[0])}">`).join('');

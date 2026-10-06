@@ -17,10 +17,18 @@ class ErrorHttp extends Error {
   constructor(status, mensaje) { super(mensaje); this.status = status; }
 }
 
+// Los assets estáticos reciben sus cabeceras desde public/_headers; las respuestas de la API, desde aquí.
+const CABECERAS_API = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'same-origin',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+};
+
 function json(datos, status = 200, extra = {}) {
   return new Response(JSON.stringify(datos), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...extra },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...CABECERAS_API, ...extra },
   });
 }
 
@@ -77,7 +85,13 @@ function normalizar(campo, v) {
   const s = v == null ? '' : String(v).trim();
   if (s.length > LARGO_MAX) throw new ErrorHttp(400, `El campo ${campo} es demasiado largo`);
   if (campo === 'fecha' && s && !/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new ErrorHttp(400, 'Fecha inválida (AAAA-MM-DD)');
-  if (campo === 'ppu' || campo === 'dest' || campo === 'proc_') return s.toUpperCase();
+  if (campo === 'ppu') {
+    const u = s.toUpperCase();
+    if (!/^[A-Z0-9 ]{0,200}$/.test(u)) throw new ErrorHttp(400, 'Patente inválida (solo letras, números y espacios)');
+    return u;
+  }
+  if ((campo === 'tipo' || campo === 'dest') && /[<>"&]/.test(s)) throw new ErrorHttp(400, `El campo ${campo} contiene caracteres no permitidos`);
+  if (campo === 'dest' || campo === 'proc_') return s.toUpperCase();
   return s;
 }
 
@@ -230,7 +244,8 @@ async function editarRegistro(id, req, env, yo) {
   const d = await leerJson(req);
   const viejo = await env.DB.prepare('SELECT * FROM registros WHERE id = ?').bind(id).first();
   if (!viejo) throw new ErrorHttp(404, 'Registro no encontrado');
-  if (d.version != null && Number(d.version) !== viejo.actualizado)
+  if (d.version == null || !Number.isFinite(Number(d.version))) throw new ErrorHttp(400, 'Falta la versión del registro (campo version)');
+  if (Number(d.version) !== viejo.actualizado)
     return json({ error: 'Otro usuario modificó este ingreso mientras lo editabas. Revisa los cambios y vuelve a guardar.', registro: viejo }, 409);
   const cambios = {};
   for (const k of EDITABLES) {
@@ -260,6 +275,8 @@ async function editarRegistro(id, req, env, yo) {
 // ---------- adjuntos (PDF del oficio, escaneos, respuesta) ----------
 const COLS_ADJ = 'id, registro_id, nombre, tipo, tamano, subido_por, fecha';
 
+const TIPOS_OLE = ['application/msword', 'application/vnd.ms-excel', 'application/vnd.ms-outlook'];
+
 function tipoPermitido(tipo, d) {
   // Se confía en la firma del archivo, no en lo que declara el navegador.
   const empieza = (...f) => d.length >= f.length && f.every((b, i) => d[i] === b);
@@ -268,7 +285,7 @@ function tipoPermitido(tipo, d) {
   if (empieza(0x89, 0x50, 0x4E, 0x47)) return 'image/png';
   if (empieza(0x49, 0x49, 0x2A, 0x00) || empieza(0x4D, 0x4D, 0x00, 0x2A)) return 'image/tiff';
   if (empieza(0x50, 0x4B, 0x03, 0x04) && tipo.includes('officedocument')) return tipo;
-  if (empieza(0xD0, 0xCF, 0x11, 0xE0)) return tipo.startsWith('application/') ? tipo : 'application/octet-stream';
+  if (empieza(0xD0, 0xCF, 0x11, 0xE0)) return TIPOS_OLE.includes(tipo) ? tipo : 'application/octet-stream'; // doc / xls / msg
   if (tipo === 'message/rfc822') return tipo;
   return null;
 }
